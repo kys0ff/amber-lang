@@ -46,6 +46,7 @@ class TypeChecker(
     internal val resolvedSymbols = mutableMapOf<Expression, Symbol>()
     val errors = mutableListOf<Diagnostic>()
     private var currentFunctionReturnType: Type? = null
+    private val expectedReturnTypes = mutableListOf<Type>()
 
     private val typeResolver = TypeResolver(::reportError)
     private val typeCompatibilityChecker = TypeCompatibilityChecker(::reportError)
@@ -143,11 +144,11 @@ class TypeChecker(
                 statement is ImportStatement
     }
 
-    private fun visitStatement(statement: Statement) {
+    private fun visitStatement(statement: Statement, skipUnusedWarning: Boolean = false) {
         when (statement) {
             is VariableDeclaration -> visitVariableDeclaration(statement)
-            is ExpressionStatement -> visitExpressionStatement(statement)
-            is BlockStatement -> visitBlockStatement(statement)
+            is ExpressionStatement -> visitExpressionStatement(statement, skipUnusedWarning)
+            is BlockStatement -> visitBlockStatement(statement, isExpression = skipUnusedWarning)
             is IfStatement -> visitIfStatement(statement)
             is WhileStatement -> visitWhileStatement(statement)
             is FunctionDeclaration -> visitFunctionDeclaration(statement)
@@ -236,9 +237,9 @@ class TypeChecker(
         defineSymbol(declaration.name, symbol)
     }
 
-    private fun visitExpressionStatement(statement: ExpressionStatement) {
+    private fun visitExpressionStatement(statement: ExpressionStatement, skipUnusedWarning: Boolean = false) {
         val type = visitExpression(statement.expression)
-        if (statement.expression !is AssignmentExpression && type != Type.UnitType && type != Type.ErrorType && type !is Type.UnsafeType && type != Type.AnyType) {
+        if (!skipUnusedWarning && statement.expression !is AssignmentExpression && type != Type.UnitType && type != Type.ErrorType && type !is Type.UnsafeType && type != Type.AnyType && type != Type.NothingType) {
             errors.add(
                 GenericDiagnostic(
                     filePath = currentFilePath,
@@ -571,7 +572,7 @@ class TypeChecker(
                 reportError(it, "panic message must be a string, but got $messageType", "ensure the expression evaluates to a string")
             }
         }
-        return Type.AnyType
+        return Type.NothingType
     }
 
     private fun visitCatchExpression(catch: CatchExpression): Type {
@@ -590,33 +591,60 @@ class TypeChecker(
         }
         defineSymbol(catch, Symbol(catch.errorVarName, errorVarType, line = catch.line, column = catch.column))
         
-        visitBlockStatement(catch.body)
+        visitBlockStatement(catch.body, isExpression = true, expectedReturnType = innerType, contextName = "catch block")
         
-        // Check compatibility of the last expression in the catch block if it's supposed to be the result.
-        // For now, we'll just return innerType and assume the user knows what they are doing,
-        // but ideally we should verify the catch block "produces" a value of innerType.
-        // In Amber, we don't have a clear "block value" concept, so we might need to enforce 
-        // that the last statement is an expression statement of the correct type.
-        
-        val lastStatement = catch.body.statements.lastOrNull()
-        if (lastStatement is ExpressionStatement) {
-            val lastType = expressionTypes[lastStatement.expression] ?: Type.UnitType
-            if (lastType != innerType && innerType != Type.AnyType && lastType != Type.ErrorType && lastType != Type.AnyType) {
-                reportError(lastStatement, "catch block must result in type $innerType, but got $lastType")
-            }
-        } else if (innerType != Type.UnitType && innerType != Type.ErrorType) {
-             reportError(catch.body, "catch block must result in type $innerType")
-        }
-
         currentScope = currentScope.exitScope()!!
         
         return innerType
     }
 
-    private fun visitBlockStatement(block: BlockStatement) {
+    private fun visitBlockStatement(
+        block: BlockStatement,
+        isExpression: Boolean = false,
+        expectedReturnType: Type? = null,
+        contextName: String = "block"
+    ) {
         currentScope = currentScope.enterScope()
-        block.statements.forEach { visitStatement(it) }
+        if (expectedReturnType != null) expectedReturnTypes.add(expectedReturnType)
+        block.statements.forEachIndexed { index, statement ->
+            val isLast = index == block.statements.size - 1
+
+            if (block.statements.size == 1 && isExpression && isLast && statement is ReturnStatement) {
+                errors.add(
+                    GenericDiagnostic(
+                        filePath = currentFilePath,
+                        line = statement.line,
+                        column = statement.column,
+                        message = "redundant return keyword",
+                        type = "Warning",
+                        suggestion = "remove the 'return' keyword as it's the only expression in this block",
+                        severity = Severity.WARNING,
+                        length = 6
+                    )
+                )
+            }
+
+            visitStatement(statement, skipUnusedWarning = isExpression && isLast)
+
+            if (block.statements.size == 1 && isExpression && isLast && statement is ExpressionStatement && expectedReturnType != null) {
+                val actualType = expressionTypes[statement.expression] ?: Type.UnitType
+                typeCompatibilityChecker.checkReturnType(actualType, expectedReturnType, statement)
+            }
+        }
+
+        if (block.statements.size > 1 && isExpression && expectedReturnType != null && expectedReturnType != Type.UnitType && expectedReturnType != Type.ErrorType) {
+            val last = block.statements.lastOrNull()
+            if (last !is ReturnStatement) {
+                reportError(
+                    last ?: block,
+                    "$contextName with multiple expressions must explicitly return a value",
+                    "add a 'return' keyword to the last expression"
+                )
+            }
+        }
+
         reportUnusedSymbols()
+        if (expectedReturnType != null) expectedReturnTypes.removeAt(expectedReturnTypes.size - 1)
         currentScope = currentScope.exitScope()!!
     }
 
@@ -717,7 +745,7 @@ class TypeChecker(
         }
 
         function.body?.let { 
-            visitBlockStatement(it)
+            visitBlockStatement(it, isExpression = true, expectedReturnType = declaredReturnType, contextName = "function '${function.name.name}'")
             if (declaredReturnType != Type.UnitType && !definitelyReturns(it)) {
                 reportError(
                     function.name,
@@ -734,12 +762,12 @@ class TypeChecker(
     private fun visitReturnStatement(returnStmt: ReturnStatement) {
         val returnedType = returnStmt.value?.let { visitExpression(it) } ?: Type.UnitType
 
-        val expectedType = currentFunctionReturnType
+        val expectedType = expectedReturnTypes.lastOrNull() ?: currentFunctionReturnType
         if (expectedType == null) {
             reportError(
                 returnStmt,
-                "return statement is only allowed inside a function",
-                "move this return into a function body"
+                "return statement is only allowed inside a function or a returnable block",
+                "move this return into a function body or a catch block"
             )
             return
         }
@@ -791,7 +819,7 @@ class TypeChecker(
             }
 
             val symbolsToImport = importedTypeChecker.currentScope.getTopLevelSymbols()
-            val moduleType = Type.ModuleType(symbolsToImport.associate { it.name to it })
+            val moduleType = Type.ModuleType(symbolsToImport.associateBy { it.name })
 
             if (currentScope.resolve(moduleIdentifierName) != null) {
                 reportError(
@@ -823,7 +851,11 @@ class TypeChecker(
         return when (statement) {
             is ReturnStatement -> true
             is BlockStatement -> {
-                statement.statements.any { definitelyReturns(it) }
+                if (statement.statements.size == 1 && statement.statements[0] is ExpressionStatement) {
+                    true
+                } else {
+                    statement.statements.any { definitelyReturns(it) }
+                }
             }
             is IfStatement -> {
                 val thenReturns = definitelyReturns(statement.thenBranch)

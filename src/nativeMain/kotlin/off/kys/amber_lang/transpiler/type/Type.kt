@@ -8,6 +8,7 @@ sealed class Type {
     object ErrorType : Type() // For when a type cannot be determined or is invalid
     object AnyType : Type() // New type for 'any'
     object CharType : Type()
+    object NothingType : Type() // Bottom type for expressions that never return (like panic)
 
     data class ArrayListType(val elementType: Type) : Type()
     data class ListType(val elementType: Type) : Type()
@@ -24,6 +25,7 @@ sealed class Type {
         ErrorType -> "error"
         AnyType -> "any" // Add AnyType to toString
         CharType -> "char"
+        NothingType -> "nothing"
         is ArrayListType -> "array_list<$elementType>"
         is ListType -> "${elementType}[]"
         is UnsafeType -> "${innerType}!"

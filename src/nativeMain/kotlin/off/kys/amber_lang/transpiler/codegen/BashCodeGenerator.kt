@@ -121,6 +121,8 @@ class BashCodeGenerator(
         return output.toString()
     }
 
+    private val returnTargets = mutableListOf<String>()
+
     private fun resolveExpression(node: AstNode): String {
         return when (node) {
             is LiteralExpression -> {
@@ -379,6 +381,7 @@ class BashCodeGenerator(
                 val targetStr = resolveExpression(node.target)
                 val targetRef = formatRef(targetStr)
                 val tmp = nextTempVar()
+                returnTargets.add(tmp)
 
                 indent()
                 output.append("if [[ \"\$${targetRef}\" == ${ValueTag.ERR}:* ]]; then\n")
@@ -395,7 +398,7 @@ class BashCodeGenerator(
                     val lastExprStr = resolveExpression(lastStatement.expression)
                     indent()
                     output.append("$tmp=\"\$${formatRef(lastExprStr)}\"\n")
-                } else {
+                } else if (lastStatement !is ReturnStatement) {
                     indent()
                     output.append("$tmp=\"${ValueTag.UNIT}:\"\n")
                 }
@@ -412,6 +415,7 @@ class BashCodeGenerator(
                 indent()
                 output.append("fi\n")
 
+                returnTargets.removeAt(returnTargets.size - 1)
                 tmp
             }
 
@@ -518,7 +522,17 @@ class BashCodeGenerator(
             val defaultRef = formatRef(defaultStr)
             declareAndAssign(name, "\"\${${i + 1}:-\$${defaultRef}}\"")
         }
-        func.body?.let { visitBlockStatement(it) }
+        func.body?.let {
+            visitBlockStatement(it)
+            // Handle implicit return for single-expression functions
+            if (it.statements.size == 1 && it.statements[0] is ExpressionStatement && currentFunctionReturnType != Type.UnitType) {
+                val exprStmt = it.statements[0] as ExpressionStatement
+                val valStr = resolveExpression(exprStmt.expression)
+                val retVar = currentFunctionName?.let { name -> "${names.returnPrefix}$name" } ?: "${names.returnPrefix}val"
+                indent()
+                output.append("$retVar=\"\$${formatRef(valStr)}\"\n")
+            }
+        }
         indentLevel--
         indent(); output.append("}\n\n")
 
@@ -529,7 +543,7 @@ class BashCodeGenerator(
     }
 
     override fun visitReturnStatement(stmt: ReturnStatement) {
-        val retVar = currentFunctionName?.let { "${names.returnPrefix}$it" } ?: "${names.returnPrefix}val"
+        val retVar = returnTargets.lastOrNull() ?: (currentFunctionName?.let { "${names.returnPrefix}$it" } ?: "${names.returnPrefix}val")
         stmt.value?.let { valueNode ->
             val valStr = resolveExpression(valueNode)
             val valRef = formatRef(valStr)
@@ -540,8 +554,12 @@ class BashCodeGenerator(
             indent()
             output.append("$retVar=\"${ValueTag.UNIT}:\"\n")
         }
-        indent()
-        output.append("return 0\n")
+        
+        // Only emit Bash return if we are returning from a function, not a block
+        if (returnTargets.isEmpty()) {
+            indent()
+            output.append("return 0\n")
+        }
     }
 
     private fun flattenMemberAccess(expr: MemberAccessExpression): String {

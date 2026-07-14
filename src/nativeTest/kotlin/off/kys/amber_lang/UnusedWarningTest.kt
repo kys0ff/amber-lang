@@ -147,6 +147,46 @@ class UnusedWarningTest {
             "Suggestion should be 'remove it'. Actual: ${warning?.suggestion}")
     }
 
+    @Test
+    fun testCatchBlockReturnValueNoWarning() {
+        val source = """
+            use "core:io"
+            func your_name(): string! {
+                panic "Yoo"
+                return "Name"
+            }
+            io.println(
+                your_name() or catch(_) {
+                    io.println("First")
+                    "Got"
+                }
+            )
+        """.trimIndent()
+        val result = transpile(source)
+        assertFalse(result.errors.any { it.message.contains("unused return value") },
+            "Should not have unused return value warning for 'Got' in catch block. Actual errors: ${result.errors.filter { it.type == "Warning" }.map { "${it.type}: ${it.message}" }}")
+    }
+
+    @Test
+    fun testUnusedReturnValueInCatchBlockWarning() {
+        val source = """
+            use "core:io"
+            func your_name(): string! {
+                panic "Yoo"
+                return "Name"
+            }
+            io.println(
+                your_name() or catch(_) {
+                    "unused"
+                    "used"
+                }
+            )
+        """.trimIndent()
+        val result = transpile(source)
+        assertTrue(result.errors.any { it.message.contains("unused return value") && it.line == 8 },
+            "Should have unused return value warning for 'unused' in catch block. Actual errors: ${result.errors.filter { it.type == "Warning" }.map { "${it.line}: ${it.message}" }}")
+    }
+
     private fun transpile(source: String) = Transpiler(
         sourceCode = source,
         currentFilePath = "/tmp/test.amb",

@@ -11,7 +11,7 @@ class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, messag
         node: AstNode,
         targetName: String? = null,
     ): Boolean {
-        if (targetType == Type.AnyType || valueType == Type.ErrorType) return true
+        if (targetType == Type.AnyType || valueType == Type.ErrorType || valueType == Type.NothingType) return true
         if (targetType == valueType) return true
 
         if (targetType is Type.UnsafeType && valueType == targetType.innerType) return true
@@ -36,6 +36,7 @@ class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, messag
     fun checkBinaryOperatorCompatibility(leftType: Type, operator: String, rightType: Type, node: AstNode): Type {
         // silence cascading errors if one side is already broken
         if (leftType == Type.ErrorType || rightType == Type.ErrorType) return Type.ErrorType
+        if (leftType == Type.NothingType || rightType == Type.NothingType) return Type.NothingType
 
         return when (operator) {
             "+" -> {
@@ -120,6 +121,7 @@ class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, messag
 
     fun checkUnaryOperatorCompatibility(operator: String, operandType: Type, node: AstNode): Type {
         if (operandType == Type.ErrorType) return Type.ErrorType
+        if (operandType == Type.NothingType) return Type.NothingType
 
         return when (operator) {
             "-" -> {
@@ -189,7 +191,7 @@ class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, messag
         var allCompatible = true
         argTypes.forEachIndexed { i, argType ->
             val expected = calleeType.parameterTypes[i]
-            if (argType != Type.ErrorType && argType != expected && expected != Type.AnyType) {
+            if (argType != Type.ErrorType && argType != Type.NothingType && argType != expected && expected != Type.AnyType) {
                 errorReporter(
                     call.arguments[i],
                     "argument ${i + 1} type mismatch: expected $expected, got $argType",
@@ -202,7 +204,7 @@ class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, messag
     }
 
     fun checkReturnType(returnedType: Type, expectedReturnType: Type, node: AstNode): Boolean {
-        if (expectedReturnType == Type.AnyType || returnedType == Type.ErrorType) return true
+        if (expectedReturnType == Type.AnyType || returnedType == Type.ErrorType || returnedType == Type.NothingType) return true
         if (returnedType == expectedReturnType) return true
         if (expectedReturnType is Type.UnsafeType && returnedType == expectedReturnType.innerType) return true
         if (expectedReturnType is Type.UnsafeType && returnedType is Type.UnsafeType && returnedType.innerType == Type.AnyType) return true
