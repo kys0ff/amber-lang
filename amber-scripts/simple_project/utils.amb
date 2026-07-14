@@ -1,0 +1,10 @@
+use "core:io"
+
+func something(param1: string = "Hi You"): string {
+    io.println(param1)
+    return "oo"
+}
+
+func my_func(): unit {
+    io.println("my funt")
+}

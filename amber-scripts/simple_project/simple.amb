@@ -1,0 +1,13 @@
+use "core:io"
+
+func your_name(): string! {
+    panic "Yoo"
+    return "Name"
+}
+
+io.println(
+    your_name() or catch(_) {
+        io.println("First")
+        "Got"
+    }
+)
