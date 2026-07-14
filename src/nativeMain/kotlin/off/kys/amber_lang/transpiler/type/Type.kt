@@ -16,6 +16,8 @@ sealed class Type {
 
     data class FunctionType(val parameterTypes: List<Type>, val hasDefaultValues: List<Boolean>, val returnType: Type) : Type()
     data class ModuleType(val exportedSymbols: Map<String, Symbol>) : Type() // New type for modules
+    data class EnumType(val name: String, val variants: List<String>) : Type()
+    data class EnumTypeNamespace(val enumType: EnumType) : Type()
 
     final override fun toString(): String = when (this) {
         NumberType -> "number"
@@ -31,5 +33,7 @@ sealed class Type {
         is UnsafeType -> "${innerType}!"
         is FunctionType -> "(${parameterTypes.joinToString(", ")}) -> $returnType"
         is ModuleType -> "module { ${exportedSymbols.keys.joinToString(", ")} }"
+        is EnumType -> name
+        is EnumTypeNamespace -> "namespace $enumType"
     }
 }

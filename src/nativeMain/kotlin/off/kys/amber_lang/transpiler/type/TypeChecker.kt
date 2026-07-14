@@ -14,6 +14,7 @@ import off.kys.amber_lang.transpiler.ast.BinaryExpression
 import off.kys.amber_lang.transpiler.ast.BlockStatement
 import off.kys.amber_lang.transpiler.ast.CallExpression
 import off.kys.amber_lang.transpiler.ast.CatchExpression
+import off.kys.amber_lang.transpiler.ast.EnumDeclaration
 import off.kys.amber_lang.transpiler.ast.ErrorNode
 import off.kys.amber_lang.transpiler.ast.Expression
 import off.kys.amber_lang.transpiler.ast.ExpressionStatement
@@ -141,12 +142,14 @@ class TypeChecker(
     private fun isDeclaration(statement: Statement): Boolean {
         return statement is VariableDeclaration ||
                 statement is FunctionDeclaration ||
-                statement is ImportStatement
+                statement is ImportStatement ||
+                statement is EnumDeclaration
     }
 
     private fun visitStatement(statement: Statement, skipUnusedWarning: Boolean = false) {
         when (statement) {
             is VariableDeclaration -> visitVariableDeclaration(statement)
+            is EnumDeclaration -> visitEnumDeclaration(statement)
             is ExpressionStatement -> visitExpressionStatement(statement, skipUnusedWarning)
             is BlockStatement -> visitBlockStatement(statement, isExpression = skipUnusedWarning)
             is IfStatement -> visitIfStatement(statement)
@@ -188,7 +191,7 @@ class TypeChecker(
         if (declaration.isIntrinsic && !isStandardLibraryFile(currentFilePath)) {
             reportError(declaration, "intrinsic variables are only allowed in the core standard library")
         }
-        val declaredType = declaration.typeAnnotation?.let { typeResolver.resolveType(it, declaration) }
+        val declaredType = declaration.typeAnnotation?.let { typeResolver.resolveType(it, declaration, currentScope) }
         var initializerType = declaration.initializer?.let { visitExpression(it) }
 
         if (declaration.initializer is ArrayLiteralExpression && initializerType is Type.ListType) {
@@ -354,7 +357,7 @@ class TypeChecker(
 
     private fun visitIsExpression(isExpr: IsExpression): Type {
         visitExpression(isExpr.left)
-        typeResolver.resolveType(isExpr.typeName, isExpr)
+        typeResolver.resolveType(isExpr.typeName, isExpr, currentScope)
         return Type.BooleanType
     }
 
@@ -509,6 +512,21 @@ class TypeChecker(
         val targetType = visitExpression(memberAccess.target)
         val memberName = memberAccess.member.name
 
+        if (targetType is Type.EnumTypeNamespace) {
+            val enumType = targetType.enumType
+            if (memberName in enumType.variants) {
+                expressionTypes[memberAccess] = enumType
+                return enumType
+            } else {
+                reportError(
+                    memberAccess.member,
+                    "enum '${enumType.name}' has no variant '$memberName'",
+                    "check for typos or ensure the variant exists"
+                )
+                return Type.ErrorType
+            }
+        }
+
         if (targetType is Type.ModuleType) {
             val symbol = targetType.exportedSymbols[memberName]
             if (symbol != null) {
@@ -585,7 +603,7 @@ class TypeChecker(
         val innerType = if (targetType is Type.UnsafeType) targetType.innerType else Type.ErrorType
 
         currentScope = currentScope.enterScope()
-        val errorVarType = catch.errorVarType?.let { typeResolver.resolveType(it, catch) } ?: Type.StringType
+        val errorVarType = catch.errorVarType?.let { typeResolver.resolveType(it, catch, currentScope) } ?: Type.StringType
         if (errorVarType != Type.StringType && errorVarType != Type.ErrorType && errorVarType != Type.AnyType) {
             reportError(catch, "catch variable must be of type string, but got $errorVarType")
         }
@@ -666,6 +684,21 @@ class TypeChecker(
         visitBlockStatement(whileStmt.body)
     }
 
+    private fun visitEnumDeclaration(declaration: EnumDeclaration) {
+        val enumType = Type.EnumType(declaration.name.name, declaration.variants.map { it.name })
+        val namespaceType = Type.EnumTypeNamespace(enumType)
+        val symbol = Symbol(
+            declaration.name.name,
+            namespaceType,
+            isMutable = false,
+            line = declaration.line,
+            column = declaration.column
+        )
+        if (!currentScope.define(symbol)) {
+            reportError(declaration.name, "symbol '${declaration.name.name}' is already defined")
+        }
+    }
+
     private fun visitFunctionDeclaration(function: FunctionDeclaration) {
         if (function.isIntrinsic) {
             if (!isStandardLibraryFile(currentFilePath)) {
@@ -676,7 +709,7 @@ class TypeChecker(
             }
         }
         val declaredReturnType =
-            function.returnTypeAnnotation?.let { typeResolver.resolveType(it, function) } ?: Type.UnitType
+            function.returnTypeAnnotation?.let { typeResolver.resolveType(it, function, currentScope) } ?: Type.UnitType
         val previousFunctionReturnType = currentFunctionReturnType
         currentFunctionReturnType = declaredReturnType
 
@@ -685,7 +718,7 @@ class TypeChecker(
         val inferableParameterIndices = mutableSetOf<Int>()
 
         function.parameters.forEachIndexed { index, param ->
-            val paramDeclaredType = param.typeAnnotation?.let { typeResolver.resolveType(it, param) }
+            val paramDeclaredType = param.typeAnnotation?.let { typeResolver.resolveType(it, param, currentScope) }
             val tempScopeForDefaultValue = currentScope.enterScope()
             val originalScope = currentScope
             currentScope = tempScopeForDefaultValue

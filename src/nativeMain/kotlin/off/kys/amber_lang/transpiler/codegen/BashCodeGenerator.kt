@@ -8,6 +8,7 @@ import off.kys.amber_lang.transpiler.ast.BinaryExpression
 import off.kys.amber_lang.transpiler.ast.BlockStatement
 import off.kys.amber_lang.transpiler.ast.CallExpression
 import off.kys.amber_lang.transpiler.ast.CatchExpression
+import off.kys.amber_lang.transpiler.ast.EnumDeclaration
 import off.kys.amber_lang.transpiler.ast.ErrorNode
 import off.kys.amber_lang.transpiler.ast.Expression
 import off.kys.amber_lang.transpiler.ast.ExpressionStatement
@@ -27,7 +28,6 @@ import off.kys.amber_lang.transpiler.ast.VariableDeclaration
 import off.kys.amber_lang.transpiler.ast.WhileStatement
 import off.kys.amber_lang.transpiler.type.Symbol
 import off.kys.amber_lang.transpiler.type.Type
-import off.kys.amber_lang.transpiler.type.Type.StringType
 
 class BashCodeGenerator(
     private val expressionTypes: Map<Expression, Type>,
@@ -83,6 +83,7 @@ class BashCodeGenerator(
             is Program -> visitProgram(node)
             is BlockStatement -> visitBlockStatement(node)
             is VariableDeclaration -> visitVariableDeclaration(node)
+            is EnumDeclaration -> visitEnumDeclaration(node)
             is ExpressionStatement -> visitExpressionStatement(node)
             is IfStatement -> visitIfStatement(node)
             is WhileStatement -> visitWhileStatement(node)
@@ -150,6 +151,15 @@ class BashCodeGenerator(
             }
 
             is MemberAccessExpression -> {
+                val targetType = expressionTypes[node.target]
+                if (targetType is Type.EnumTypeNamespace) {
+                    val enumType = targetType.enumType
+                    val index = enumType.variants.indexOf(node.member.name)
+                    val tmp = nextTempVar()
+                    indent()
+                    output.append("$tmp=\"${ValueTag.NUM}:$index\"\n")
+                    return tmp
+                }
                 flattenMemberAccess(node)
             }
 
@@ -260,12 +270,12 @@ class BashCodeGenerator(
                             indent()
                             output.append("eval \"\${$arrayNameVar}+=(\\\"\$${rightRef}\\\")\"\n")
                             return l
-                        } else if (leftType == StringType || rightType == StringType) {
+                        } else if (leftType == Type.StringType || rightType == Type.StringType) {
                             val platformToString = runtimeProvider.getPlatformName("to_string") ?: "to_string"
                             usedIntrinsics.add("to_string")
                             val mangledToString = "${names.runtimePrefix}$platformToString"
-                            val lVal = if (leftType == StringType) l else "\$($mangledToString \"\$${leftRef}\")"
-                            val rVal = if (rightType == StringType) r else "\$($mangledToString \"\$${rightRef}\")"
+                            val lVal = if (leftType == Type.StringType) l else "\$($mangledToString \"\$${leftRef}\")"
+                            val rVal = if (rightType == Type.StringType) r else "\$($mangledToString \"\$${rightRef}\")"
                             declareAndAssign(tmp, "\"${ValueTag.STR}:$lVal$rVal\"")
                         } else {
                             declareAndAssign(tmp, "\"${ValueTag.NUM}:\$(echo \"$l + $r\" | bc -l)\"")
@@ -332,7 +342,7 @@ class BashCodeGenerator(
                 val tmp = nextTempVar()
 
                 val targetType = expressionTypes[node.target]
-                if (targetType == StringType) {
+                if (targetType == Type.StringType) {
                     val v = "\${${targetRef}#*:}"
                     declareAndAssign(tmp, "\"${ValueTag.CHAR}:\${$v:$i:1}\"")
                 } else {
@@ -467,6 +477,10 @@ class BashCodeGenerator(
         val valStr = declaration.initializer?.let { resolveExpression(it) } ?: "${ValueTag.UNIT}:"
         val valRef = formatRef(valStr)
         declareAndAssign(name, "\"\$${valRef}\"", !declaration.isMutable)
+    }
+
+    override fun visitEnumDeclaration(declaration: EnumDeclaration) {
+        // Enums don't generate any code at declaration site
     }
 
     override fun visitExpressionStatement(statement: ExpressionStatement) {

@@ -6,6 +6,7 @@ interface AstNodeVisitor<T> {
     fun visitProgram(program: Program): T
     fun visitBlockStatement(block: BlockStatement): T
     fun visitVariableDeclaration(declaration: VariableDeclaration): T
+    fun visitEnumDeclaration(declaration: EnumDeclaration): T
     fun visitLiteralExpression(literal: LiteralExpression): T
     fun visitIdentifierExpression(identifier: IdentifierExpression): T
     fun visitExpressionStatement(statement: ExpressionStatement): T

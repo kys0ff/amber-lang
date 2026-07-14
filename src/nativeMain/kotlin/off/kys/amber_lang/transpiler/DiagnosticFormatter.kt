@@ -82,7 +82,11 @@ class DiagnosticFormatter(
         val gutter = colorize(" ".repeat(gutterWidth) + " |", DIM)
         val leadingSpaces = " ".repeat((diagnostic.column - 1).coerceAtLeast(0))
         val caretWidth = (diagnostic.length ?: 1).coerceAtLeast(1)
-        val caret = colorize("^".repeat(caretWidth), RED + BOLD)
+        val caretColor = when (diagnostic.severity) {
+            Severity.ERROR -> RED
+            Severity.WARNING -> YELLOW
+        }
+        val caret = colorize("^".repeat(caretWidth), caretColor + BOLD)
         val hint = diagnostic.caretLabel?.let { " $it" } ?: ""
         return "  $gutter  $leadingSpaces$caret$hint"
     }

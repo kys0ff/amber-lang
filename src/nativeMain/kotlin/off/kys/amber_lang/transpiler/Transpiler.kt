@@ -25,7 +25,7 @@ class Transpiler(
 
         // 1. Lexing and Parsing
         val (mainProgram, parseErrors) = parseSource(sourceCode)
-        if (parseErrors.isNotEmpty()) {
+        if (parseErrors.any { it.severity == Severity.ERROR }) {
             // Return early if syntax is broken
             return TranspilationResult(null, parseErrors)
         }
@@ -48,6 +48,7 @@ class Transpiler(
 
         // Combine all errors and warnings
         val allDiagnostics = mutableListOf<Diagnostic>()
+        allDiagnostics.addAll(parseErrors) // Add parse diagnostics (warnings)
         allDiagnostics.addAll(typeErrors)
         typeChecker.importedModuleTypeCheckers.values.forEach { allDiagnostics.addAll(it.errors) }
 

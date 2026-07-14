@@ -1,5 +1,6 @@
 package off.kys.amber_lang.transpiler.parser
 
+import off.kys.amber_lang.transpiler.Severity
 import off.kys.amber_lang.transpiler.SyntaxError
 import off.kys.amber_lang.transpiler.ast.ArrayLiteralExpression
 import off.kys.amber_lang.transpiler.ast.AssignmentExpression
@@ -7,6 +8,7 @@ import off.kys.amber_lang.transpiler.ast.BinaryExpression
 import off.kys.amber_lang.transpiler.ast.BlockStatement
 import off.kys.amber_lang.transpiler.ast.CallExpression
 import off.kys.amber_lang.transpiler.ast.CatchExpression
+import off.kys.amber_lang.transpiler.ast.EnumDeclaration
 import off.kys.amber_lang.transpiler.ast.ErrorNode
 import off.kys.amber_lang.transpiler.ast.Expression
 import off.kys.amber_lang.transpiler.ast.ExpressionStatement
@@ -38,7 +40,8 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
     private val state = ParserState()
     private val errors = mutableListOf<SyntaxError>()
 
-    private fun peek(): Token = tokens.getOrElse(state.currentIndex) { Token.EOF() }.let(::normalizeToken)
+    private fun peek(): Token =
+        tokens.getOrElse(state.currentIndex) { Token.EOF() }.let(::normalizeToken)
 
     private fun consume(): Token {
         val token = peek()
@@ -55,11 +58,12 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
     }
 
     private fun reportError(message: String, line: Int = peek().line, column: Int = peek().column) {
-        val finalMessage = if (peek() is Token.EOF && (message.contains("'EOF'") || message.contains("'eof'"))) {
-            message.replace("'EOF'", "end of file", ignoreCase = true)
-        } else {
-            message
-        }
+        val finalMessage =
+            if (peek() is Token.EOF && (message.contains("'EOF'") || message.contains("'eof'"))) {
+                message.replace("'EOF'", "end of file", ignoreCase = true)
+            } else {
+                message
+            }
         errors.add(SyntaxError(filePath, line, column, finalMessage.lowercase()))
     }
 
@@ -145,7 +149,7 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
             is Token.Keyword -> {
                 when (token.value) {
                     "intrinsic" -> {
-                        val intrinsicKeyword = consume()
+                        consume()
                         val next = peek()
                         if (next is Token.Keyword) {
                             when (next.value) {
@@ -161,7 +165,9 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
                             throw ParserRecoveryException()
                         }
                     }
+
                     "func" -> parseFunctionDeclaration()
+                    "enum" -> parseEnumDeclaration()
                     "val", "var" -> parseVariableDeclaration()
                     "if" -> parseIfStatement()
                     "while" -> parseWhileStatement()
@@ -260,7 +266,46 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
         } else {
             parseBlockStatement()
         }
-        return FunctionDeclaration(name, parameters, returnTypeAnnotation, body, isIntrinsic, funcKeyword.line, funcKeyword.column)
+        return FunctionDeclaration(
+            name,
+            parameters,
+            returnTypeAnnotation,
+            body,
+            isIntrinsic,
+            funcKeyword.line,
+            funcKeyword.column
+        )
+    }
+
+    private fun parseEnumDeclaration(): EnumDeclaration {
+        val startToken = expectToken("enum")
+        val name = parseIdentifierExpression()
+        expectToken("{")
+        skipNewlines()
+        val variants = mutableListOf<IdentifierExpression>()
+        while (peek() !is Token.EOF && (peek() !is Token.Separator || (peek() as Token.Separator).value != "}")) {
+            variants.add(parseIdentifierExpression())
+            val hadNewlineBefore = peek() is Token.Newline
+            skipNewlines()
+            if (peek() is Token.Separator && (peek() as Token.Separator).value == ",") {
+                val commaToken = consume()
+                val hadNewlineAfter = peek() is Token.Newline
+                if (hadNewlineBefore || hadNewlineAfter) {
+                    errors.add(
+                        SyntaxError(
+                            filePath,
+                            commaToken.line,
+                            commaToken.column,
+                            "unnecessary comma in enum declaration",
+                            Severity.WARNING
+                        )
+                    )
+                }
+                skipNewlines()
+            }
+        }
+        expectToken("}")
+        return EnumDeclaration(name, variants, startToken.line, startToken.column)
     }
 
     private fun parseParameter(): Parameter {
@@ -288,7 +333,15 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
             skipNewlines()
             initializer = parseExpression()
         }
-        return VariableDeclaration(name, typeAnnotation, initializer, isMutable, isIntrinsic, keywordToken.line, keywordToken.column)
+        return VariableDeclaration(
+            name,
+            typeAnnotation,
+            initializer,
+            isMutable,
+            isIntrinsic,
+            keywordToken.line,
+            keywordToken.column
+        )
     }
 
     private fun parseIfStatement(): IfStatement {
@@ -411,7 +464,10 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
         }
     }
 
-    private fun createNumericUpdateExpression(target: Expression, operatorToken: Token.Operator): AssignmentExpression {
+    private fun createNumericUpdateExpression(
+        target: Expression,
+        operatorToken: Token.Operator
+    ): AssignmentExpression {
         if (target !is IdentifierExpression) {
             reportError("invalid assignment target", operatorToken.line, operatorToken.column)
             throw ParserRecoveryException()
@@ -436,7 +492,12 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
                 LiteralExpression(value, token.line, token.column)
             }
 
-            is Token.BooleanLiteral -> LiteralExpression(token.value.toBooleanStrictOrNull(), token.line, token.column)
+            is Token.BooleanLiteral -> LiteralExpression(
+                token.value.toBooleanStrictOrNull(),
+                token.line,
+                token.column
+            )
+
             is Token.NullLiteral -> LiteralExpression(null, token.line, token.column)
             is Token.Identifier -> IdentifierExpression(token.value, token.line, token.column)
             is Token.CharLiteral -> {
@@ -454,9 +515,10 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
             }
 
             is Token.Keyword if token.value == "panic" -> {
-                val message = if (peek() !is Token.EOF && peek() !is Token.Newline && peek().value() != "}" && peek().value() != ")" && peek().value() != "," && peek().value() != "or") {
-                    parseExpression()
-                } else null
+                val message =
+                    if (peek() !is Token.EOF && peek() !is Token.Newline && peek().value() != "}" && peek().value() != ")" && peek().value() != "," && peek().value() != "or") {
+                        parseExpression()
+                    } else null
                 PanicExpression(message, isFatal = false, token.line, token.column)
             }
 
@@ -534,13 +596,35 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
                     when (val afterOr = peek()) {
                         is Token.Keyword if afterOr.value == "panic" -> {
                             consume()
-                            val panicMessage = IdentifierExpression("__amber_err", afterOr.line, afterOr.column, isSynthetic = true)
+                            val panicMessage = IdentifierExpression(
+                                "__amber_err",
+                                afterOr.line,
+                                afterOr.column,
+                                isSynthetic = true
+                            )
                             val panicBody = BlockStatement(
-                                listOf(ExpressionStatement(PanicExpression(panicMessage, isFatal = true, afterOr.line, afterOr.column), afterOr.line, afterOr.column)),
+                                listOf(
+                                    ExpressionStatement(
+                                        PanicExpression(
+                                            panicMessage,
+                                            isFatal = true,
+                                            afterOr.line,
+                                            afterOr.column
+                                        ), afterOr.line, afterOr.column
+                                    )
+                                ),
                                 afterOr.line, afterOr.column
                             )
-                            expr = CatchExpression(expr, "__amber_err", "string", panicBody, orToken.line, orToken.column)
+                            expr = CatchExpression(
+                                expr,
+                                "__amber_err",
+                                "string",
+                                panicBody,
+                                orToken.line,
+                                orToken.column
+                            )
                         }
+
                         is Token.Keyword if afterOr.value == "catch" -> {
                             consume()
                             expectToken("(")
@@ -553,8 +637,16 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
                             }
                             expectToken(")")
                             val body = parseBlockStatement()
-                            expr = CatchExpression(expr, catchVarName, catchVarType, body, orToken.line, orToken.column)
+                            expr = CatchExpression(
+                                expr,
+                                catchVarName,
+                                catchVarType,
+                                body,
+                                orToken.line,
+                                orToken.column
+                            )
                         }
+
                         else -> {
                             reportError("expected 'panic' or 'catch' after 'or'")
                             throw ParserRecoveryException()
@@ -606,10 +698,20 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
                     }
                     if (braceCount == 0) {
                         val exprStr = value.substring(start, i)
-                        segments.add(parseInterpolatedExpression(exprStr, token.line, token.column + start))
+                        segments.add(
+                            parseInterpolatedExpression(
+                                exprStr,
+                                token.line,
+                                token.column + start
+                            )
+                        )
                         i++ // skip }
                     } else {
-                        reportError("Unclosed interpolation in string", token.line, token.column + i)
+                        reportError(
+                            "Unclosed interpolation in string",
+                            token.line,
+                            token.column + i
+                        )
                     }
                 } else {
                     // Simple identifier
@@ -701,7 +803,7 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
     private fun parseType(): String {
         skipNewlines()
         var typeStr = expectIdentifier().value
-        
+
         // Handle T[]
         skipNewlines()
         while (peek().value() == "[") {
@@ -712,11 +814,20 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
             skipNewlines()
         }
 
+        // Handle generic types T<U>
+        if (peek().value() == "<") {
+            consume()
+            val elementType = parseType()
+            expectToken(">", "expected '>' after generic type")
+            typeStr += "<$elementType>"
+            skipNewlines()
+        }
+
         if (peek().value() == "!") {
             consume()
             typeStr += "!"
         }
-        
+
         return typeStr
     }
 }

@@ -63,6 +63,15 @@ data class VariableDeclaration(
     override val children: List<AstNode> get() = listOfNotNull(name, initializer)
 }
 
+data class EnumDeclaration(
+    val name: IdentifierExpression,
+    val variants: List<IdentifierExpression>,
+    override val line: Int = -1,
+    override val column: Int = -1,
+) : Statement(line, column) {
+    override val children: List<AstNode> get() = listOf(name) + variants
+}
+
 data class IfStatement(
     val condition: Expression,
     val thenBranch: BlockStatement,
