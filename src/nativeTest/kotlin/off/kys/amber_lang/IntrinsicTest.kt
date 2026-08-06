@@ -64,8 +64,8 @@ class IntrinsicTest {
         val code = result.code ?: ""
         println("CODE FOR INTRINSIC TEST:\n$code")
         
-        assertFalse(code.contains("void a_my_intrinsic() {"), "Intrinsic function declaration should not be in generated code")
-        assertTrue(code.contains("a_my_intrinsic()"), "Call to intrinsic should be generated")
+        assertFalse(code.contains("void __am_my_intrinsic() {"), "Intrinsic function declaration should not be in generated code")
+        assertTrue(code.contains("__am_my_intrinsic()"), "Call to intrinsic should be generated")
     }
 
     @Test
@@ -100,7 +100,7 @@ class IntrinsicTest {
             "Should resolve println and to_string from library. Errors: ${result.errors}")
         
         val code = result.code ?: ""
-        assertTrue(code.contains("amber_rt_echo"), "Should use amber_rt_echo for println")
+        assertTrue(code.contains("__amber_rt_println"), "Should use __amber_rt_println for println")
     }
 
     private fun transpile(source: String, filePath: String) = Transpiler(

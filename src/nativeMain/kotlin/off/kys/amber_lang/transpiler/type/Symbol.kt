@@ -11,5 +11,9 @@ class Symbol(
     var isUsed: Boolean = false,
     val isIntrinsic: Boolean = false,
     val line: Int = -1,
-    val column: Int = -1
-)
+    val column: Int = -1,
+    val namespace: String? = null
+) {
+    val qualifiedName: String
+        get() = if (namespace != null) "$namespace.$name" else name
+}

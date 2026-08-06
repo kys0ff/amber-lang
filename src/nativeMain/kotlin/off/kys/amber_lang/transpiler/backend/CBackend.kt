@@ -20,11 +20,11 @@ class CBackend(
         val typeMapper = CTypeMapper()
         val runtimeEmitter = RuntimeEmitter(writer)
         val expressionEmitter = ExpressionEmitter(writer, expressionTypes, resolvedSymbols, symbolEmitter, runtimeProvider)
-        val statementEmitter = StatementEmitter(writer, expressionEmitter, symbolEmitter, typeMapper, expressionTypes)
+        val statementEmitter = StatementEmitter(writer, expressionEmitter, symbolEmitter, typeMapper, expressionTypes, resolvedSymbols)
 
         runtimeEmitter.emitHeaders()
         runtimeEmitter.emitTypedefs()
-        runtimeEmitter.emitBuiltins()
+        runtimeEmitter.emitIntrinsics()
 
         // Separate declarations from executable statements
         val declarations = program.statements.filter {

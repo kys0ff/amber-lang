@@ -40,7 +40,8 @@ class TypeChecker(
     private val runtimeProvider: RuntimeProvider,
     private val isMainFile: Boolean = true,
     private val isProject: Boolean = false,
-    private val executableDir: String = "."
+    private val executableDir: String = ".",
+    private val namespace: String? = null
 ) {
     private var currentScope: SymbolTable
     internal val expressionTypes = mutableMapOf<Expression, Type>()
@@ -120,6 +121,15 @@ class TypeChecker(
                     )
                 )
             }
+        }
+    }
+
+    private fun calculateNamespace(importPath: String): String? {
+        return when {
+            importPath.startsWith("core:") -> "std." + importPath.removePrefix("core:").replace(":", ".")
+            importPath.startsWith("local:") -> importPath.removePrefix("local:").replace(":", ".")
+            importPath.startsWith("pkg:") -> importPath.removePrefix("pkg:").replace(":", ".")
+            else -> null
         }
     }
 
@@ -235,7 +245,8 @@ class TypeChecker(
             declaration.isMutable,
             isIntrinsic = declaration.isIntrinsic,
             line = declaration.name.line,
-            column = declaration.name.column
+            column = declaration.name.column,
+            namespace = namespace
         )
         defineSymbol(declaration.name, symbol)
     }
@@ -760,7 +771,8 @@ class TypeChecker(
             inferableParameterIndices = inferableParameterIndices,
             isIntrinsic = function.isIntrinsic,
             line = function.name.line,
-            column = function.name.column
+            column = function.name.column,
+            namespace = namespace
         )
         defineSymbol(function.name, functionSymbol)
 
@@ -836,13 +848,16 @@ class TypeChecker(
             }
 
             val importedFilePath = importResolver.resolveAbsolutePath(importStmt.path, currentFilePath)
+            val importedNamespace = calculateNamespace(importStmt.path)
+            
             val importedTypeChecker = TypeChecker(
                 projectRoot,
                 importedFilePath,
                 runtimeProvider,
                 isMainFile = false,
                 isProject = isProject,
-                executableDir = executableDir
+                executableDir = executableDir,
+                namespace = importedNamespace
             )
 
             val (_, _, importedErrors) = importedTypeChecker.check(importedProgram)

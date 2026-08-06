@@ -31,7 +31,7 @@ class ReproductionTest {
 
         // Check for basic C structure
         assertTrue(code.contains("int main("), "Should contain main function")
-        assertTrue(code.contains("a_value("), "Should contain a_value function")
+        assertTrue(code.contains("__am_value("), "Should contain __am_value function")
     }
 
     @Test

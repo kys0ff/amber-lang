@@ -1,0 +1,17 @@
+# List utilities module
+
+##
+# Returns the number of elements in a list.
+intrinsic func len(l: any[]): number
+
+##
+# Adds an element to the end of a list.
+intrinsic func push(l: any[], value: any)
+
+##
+# Removes and returns the last element from a list.
+intrinsic func pop(l: any[]): any
+
+##
+# Returns the element at the specified index.
+intrinsic func get(l: any[], index: number): any

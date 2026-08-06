@@ -87,7 +87,9 @@ class ExpressionEmitter(
                 writer.write(")")
             }
             is AssignmentExpression -> {
-                writer.write(symbolEmitter.mangle(expression.target.name))
+                val symbol = resolvedSymbols[expression.target]
+                val name = symbol?.let { symbolEmitter.mangle(it.name, it.namespace) } ?: symbolEmitter.mangle(expression.target.name)
+                writer.write(name)
                 writer.write(" = ")
                 emit(expression.value)
             }
@@ -116,11 +118,11 @@ class ExpressionEmitter(
     }
 
     private fun emitSymbol(symbol: Symbol) {
-        val platformName = runtimeProvider.getPlatformName(symbol.name)
+        val platformName = runtimeProvider.getPlatformName(symbol)
         if (platformName != null) {
             writer.write(symbolEmitter.runtimeHelper(platformName))
         } else {
-            writer.write(symbolEmitter.mangle(symbol.name))
+            writer.write(symbolEmitter.mangle(symbol.name, symbol.namespace))
         }
     }
 }

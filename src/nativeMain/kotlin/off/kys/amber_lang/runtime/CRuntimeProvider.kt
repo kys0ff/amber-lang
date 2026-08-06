@@ -1,27 +1,29 @@
 package off.kys.amber_lang.runtime
 
 import off.kys.amber_lang.transpiler.type.Symbol
-import off.kys.amber_lang.transpiler.type.Type
 
 class CRuntimeProvider : RuntimeProvider {
     override fun getBuiltInSymbols(): Map<String, Symbol> {
-        return mapOf(
-            "echo" to Symbol("echo", Type.FunctionType(listOf(Type.StringType), listOf(false), Type.UnitType), isIntrinsic = true),
-            "to_string" to Symbol("to_string", Type.FunctionType(listOf(Type.AnyType), listOf(false), Type.StringType), isIntrinsic = true),
-            "str_concat" to Symbol("str_concat", Type.FunctionType(listOf(Type.StringType, Type.StringType), listOf(false, false), Type.StringType), isIntrinsic = true)
-        )
+        // No more direct globals like echo or str_concat
+        return emptyMap()
     }
 
-    override fun getAllIntrinsicSymbols(): Map<String, Symbol> = getBuiltInSymbols()
+    override fun getAllIntrinsicSymbols(): Map<String, Symbol> = StandardLibrary.getAllSymbols()
 
-    override fun getBuiltInNames(): Set<String> = setOf("echo", "to_string", "str_concat")
+    override fun getBuiltInNames(): Set<String> = StandardLibrary.intrinsics.values.map { it.cName }.toSet()
 
-    override fun getPlatformName(name: String): String? = when (name) {
-        "echo" -> "echo"
-        "to_string" -> "to_string"
-        "str_concat" -> "str_concat"
-        "println" -> "echo" // Map println directly for now if needed, but stdlib preferred
-        else -> null
+    override fun getPlatformName(symbol: Symbol): String? {
+        // First try matching by qualified name
+        val intrinsic = StandardLibrary.getIntrinsic(symbol.qualifiedName)
+        if (intrinsic != null) return intrinsic.cName
+        
+        // Fallback for non-namespaced symbols if they match an intrinsic
+        if (symbol.namespace == null) {
+            val match = StandardLibrary.intrinsics.values.find { it.name == symbol.name }
+            if (match != null) return match.cName
+        }
+        
+        return null
     }
 
     override fun isRuntimeHelper(name: String): Boolean = false

@@ -9,6 +9,7 @@ import kotlinx.cinterop.toKString
 import off.kys.amber_lang.interop.tcc.TCC_OUTPUT_EXE
 import off.kys.amber_lang.interop.tcc.tcc_add_file
 import off.kys.amber_lang.interop.tcc.tcc_add_include_path
+import off.kys.amber_lang.interop.tcc.tcc_add_library
 import off.kys.amber_lang.interop.tcc.tcc_add_sysinclude_path
 import off.kys.amber_lang.interop.tcc.tcc_compile_string
 import off.kys.amber_lang.interop.tcc.tcc_delete
@@ -43,6 +44,7 @@ class TccCompiler(
             tcc_add_sysinclude_path(s, "${libsRoot}/include/tcc")
             tcc_add_include_path(s, "${libsRoot}/include/gc")
             tcc_add_file(s, "${libsRoot}/libgc.so")
+            tcc_add_library(s, "m")
             
             if (tcc_compile_string(s, cCode) == -1) {
                 return TccResult.Failure("Compilation failed")

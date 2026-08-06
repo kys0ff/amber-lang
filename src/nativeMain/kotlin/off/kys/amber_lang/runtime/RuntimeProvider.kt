@@ -23,7 +23,7 @@ interface RuntimeProvider {
      * Returns the platform-specific name for a built-in function.
      * Returns null if the function is not a built-in or doesn't have a special platform name.
      */
-    fun getPlatformName(name: String): String?
+    fun getPlatformName(symbol: Symbol): String?
 
     /**
      * Returns true if the name refers to a runtime helper function (to be mangled with prefix).

@@ -149,7 +149,7 @@ class Test {
 
         val errors = result.errors.filter { it.severity == Severity.ERROR }
         assertTrue(errors.isEmpty(), "expected no transpilation errors for list printing, got: $errors")
-        assertTrue(result.code!!.contains("amber_rt_echo"), "code should contain amber_rt_echo function")
+        assertTrue(result.code!!.contains("__amber_rt_println"), "code should contain __amber_rt_println function")
     }
 
     private fun transpile(source: String) = Transpiler(

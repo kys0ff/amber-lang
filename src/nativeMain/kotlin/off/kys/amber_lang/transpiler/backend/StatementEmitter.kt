@@ -11,6 +11,7 @@ import off.kys.amber_lang.transpiler.ast.ReturnStatement
 import off.kys.amber_lang.transpiler.ast.Statement
 import off.kys.amber_lang.transpiler.ast.VariableDeclaration
 import off.kys.amber_lang.transpiler.ast.WhileStatement
+import off.kys.amber_lang.transpiler.type.Symbol
 import off.kys.amber_lang.transpiler.type.Type
 
 class StatementEmitter(
@@ -18,7 +19,8 @@ class StatementEmitter(
     private val expressionEmitter: ExpressionEmitter,
     private val symbolEmitter: SymbolEmitter,
     private val typeMapper: CTypeMapper,
-    private val expressionTypes: Map<Expression, Type>
+    private val expressionTypes: Map<Expression, Type>,
+    private val resolvedSymbols: Map<Expression, Symbol>
 ) {
     fun emit(statement: Statement) {
         when (statement) {
@@ -32,10 +34,8 @@ class StatementEmitter(
             is VariableDeclaration -> {
                 val type = expressionTypes[statement.initializer] ?: Type.AnyType
                 val cType = typeMapper.map(type)
-                writer.write("    ".repeat(0)) // indent handled by writeLine usually
-                // Actually, I'll just use writer.write for the parts and writeLine for the end
-                writer.write("    ".repeat(0)) // dummy
-                val name = symbolEmitter.mangle(statement.name.name)
+                val symbol = resolvedSymbols[statement.name]
+                val name = symbol?.let { symbolEmitter.mangle(it.name, it.namespace) } ?: symbolEmitter.mangle(statement.name.name)
                 writer.write("${cType} ${name}")
                 if (statement.initializer != null) {
                     writer.write(" = ")
@@ -47,13 +47,16 @@ class StatementEmitter(
                 // Function declarations at top level or nested?
                 // C doesn't support nested functions easily (extensions exist), 
                 // but Amber might have them. For now, assume top level.
-                val returnType = Type.UnitType // Should get from symbol table
+                val symbol = resolvedSymbols[statement.name]
+                val returnType = symbol?.type?.let { if (it is Type.FunctionType) it.returnType else Type.UnitType } ?: Type.UnitType
                 val cReturnType = typeMapper.map(returnType)
-                val name = symbolEmitter.mangle(statement.name.name)
+                val name = symbol?.let { symbolEmitter.mangle(it.name, it.namespace) } ?: symbolEmitter.mangle(statement.name.name)
                 writer.write("${cReturnType} ${name}(")
                 statement.parameters.forEachIndexed { index, param ->
-                    val paramType = Type.AnyType // Should get from symbol table
-                    writer.write("${typeMapper.map(paramType)} ${symbolEmitter.mangle(param.name.name)}")
+                    val paramSymbol = resolvedSymbols[param.name]
+                    val paramType = paramSymbol?.type ?: Type.AnyType
+                    val paramName = paramSymbol?.let { symbolEmitter.mangle(it.name, it.namespace) } ?: symbolEmitter.mangle(param.name.name)
+                    writer.write("${typeMapper.map(paramType)} ${paramName}")
                     if (index < statement.parameters.size - 1) writer.write(", ")
                 }
                 writer.writeLine(") {")

@@ -10,8 +10,8 @@ class CTypeMapper {
         Type.UnitType -> "void"
         Type.CharType -> "char"
         Type.AnyType -> "void*"
-        is Type.ArrayListType -> "amber_list_t*"
-        is Type.ListType -> "amber_list_t*"
+        is Type.ArrayListType -> "__amber_list_t*"
+        is Type.ListType -> "__amber_list_t*"
         is Type.FunctionType -> "void*" // Simplified for now
         is Type.EnumType -> "int"
         else -> "void*"

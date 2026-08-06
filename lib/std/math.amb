@@ -1,1 +1,41 @@
-val pi = 3.14
+# Mathematical constants and functions
+
+##
+# The mathematical constant pi.
+val pi = 3.141592653589793
+
+##
+# Returns the absolute value of a number.
+intrinsic func abs(n: number): number
+
+##
+# Returns the square root of a number.
+intrinsic func sqrt(n: number): number
+
+##
+# Returns the value of a base raised to a power.
+intrinsic func pow(base: number, exp: number): number
+
+##
+# Returns the sine of a number (in radians).
+intrinsic func sin(n: number): number
+
+##
+# Returns the cosine of a number (in radians).
+intrinsic func cos(n: number): number
+
+##
+# Returns the largest integer less than or equal to a number.
+intrinsic func floor(n: number): number
+
+##
+# Returns the smallest integer greater than or equal to a number.
+intrinsic func ceil(n: number): number
+
+##
+# Returns the greater of two numbers.
+intrinsic func max(a: number, b: number): number
+
+##
+# Returns the smaller of two numbers.
+intrinsic func min(a: number, b: number): number
