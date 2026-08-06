@@ -1,13 +1,11 @@
 package amber.cli
 
-import amber.util.Ansi
 import amber.util.fileExists
 import amber.util.getPathParent
 import amber.util.isDirectory
 import amber.util.joinPaths
 import amber.util.normalizePath
 import amber.util.readFile
-import kotlin.system.exitProcess
 
 data class ProjectConfig(
     val name: String,
@@ -21,7 +19,7 @@ sealed class ProjectFileResult {
 }
 
 class ProjectLoader {
-    private val PROJECT_NAME_REGEX = Regex("^[A-Za-z0-9_-]+$")
+    private val projectNameRegex = Regex("^[A-Za-z0-9_-]+$")
 
     fun load(target: String): ProjectFileResult {
         val absoluteTarget = normalizePath(target)
@@ -94,7 +92,7 @@ class ProjectLoader {
         val resolvedName = name
         if (resolvedName == null) {
             errors += "missing required field 'name'"
-        } else if (!PROJECT_NAME_REGEX.matches(resolvedName)) {
+        } else if (!projectNameRegex.matches(resolvedName)) {
             errors += "'name' must contain only letters, numbers, '-' and '_' (got '$resolvedName')"
         }
 

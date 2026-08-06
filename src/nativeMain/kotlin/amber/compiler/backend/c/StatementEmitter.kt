@@ -1,6 +1,17 @@
 package amber.compiler.backend.c
 
-import amber.compiler.ast.*
+import amber.compiler.ast.BlockStatement
+import amber.compiler.ast.EnumDeclaration
+import amber.compiler.ast.Expression
+import amber.compiler.ast.ExpressionStatement
+import amber.compiler.ast.FunctionDeclaration
+import amber.compiler.ast.IfStatement
+import amber.compiler.ast.ImportStatement
+import amber.compiler.ast.PanicExpression
+import amber.compiler.ast.ReturnStatement
+import amber.compiler.ast.Statement
+import amber.compiler.ast.VariableDeclaration
+import amber.compiler.ast.WhileStatement
 import amber.compiler.symbol.Symbol
 import amber.compiler.type.Type
 
@@ -30,16 +41,16 @@ class StatementEmitter(
                 val name = symbol?.let { symbolEmitter.mangle(it.name, it.namespace) } ?: symbolEmitter.mangle(statement.name.name)
                 
                 if (declarationOnly) {
-                    writer.writeLine("${cType} ${name};")
+                    writer.writeLine("$cType ${name};")
                 } else {
                     if (isTopLevel) {
                         if (statement.initializer != null) {
-                            writer.write("${name} = ")
+                            writer.write("$name = ")
                             expressionEmitter.emit(statement.initializer)
                             writer.writeLine(";")
                         }
                     } else {
-                        writer.write("${cType} ${name}")
+                        writer.write("$cType $name")
                         if (statement.initializer != null) {
                             writer.write(" = ")
                             expressionEmitter.emit(statement.initializer)
@@ -54,12 +65,12 @@ class StatementEmitter(
                 
                 val cReturnType = typeMapper.map(returnType)
                 val name = symbol?.let { symbolEmitter.mangle(it.name, it.namespace) } ?: symbolEmitter.mangle(statement.name.name)
-                writer.write("${cReturnType} ${name}(")
+                writer.write("$cReturnType ${name}(")
                 statement.parameters.forEachIndexed { index, param ->
                     val paramSymbol = resolvedSymbols[param.name]
                     val paramType = paramSymbol?.type ?: Type.Any
                     val paramName = paramSymbol?.let { symbolEmitter.mangle(it.name, it.namespace) } ?: symbolEmitter.mangle(param.name.name)
-                    writer.write("${typeMapper.map(paramType)} ${paramName}")
+                    writer.write("${typeMapper.map(paramType)} $paramName")
                     if (index < statement.parameters.size - 1) writer.write(", ")
                 }
                 writer.writeLine(") {")
@@ -120,7 +131,7 @@ class StatementEmitter(
                     val exprType = statement.value?.let { expressionTypes[it] }
                     if (exprType is Type.Unsafe || exprType == Type.Nothing) {
                         writer.write("return ")
-                        statement.value?.let { expressionEmitter.emit(it) } ?: writer.write("__amber_rt_result_error(\"null return\")")
+                        statement.value.let { expressionEmitter.emit(it) } ?: writer.write("__amber_rt_result_error(\"null return\")")
                         writer.writeLine(";")
                     } else {
                         writer.write("return __amber_rt_result_success(")

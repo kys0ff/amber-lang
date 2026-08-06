@@ -5,7 +5,7 @@ enum class OptimizationLevel {
 }
 
 enum class BackendType {
-    C, TINYCC, LLVM, WASM
+    TINY_CC,
 }
 
 enum class GCType {
@@ -22,7 +22,7 @@ data class CompilerConfig(
     val outputName: String? = null,
     val emitC: String? = null,
     val optimizationLevel: OptimizationLevel = OptimizationLevel.O1,
-    val backend: BackendType = BackendType.TINYCC,
+    val backend: BackendType = BackendType.TINY_CC,
     val gc: GCType = GCType.BOEHM,
     val useColor: Boolean = true,
     val verbose: Boolean = false,
@@ -40,7 +40,7 @@ class CompilerConfigBuilder {
     var outputName: String? = null
     var emitC: String? = null
     var optimizationLevel: OptimizationLevel = OptimizationLevel.O1
-    var backend: BackendType = BackendType.TINYCC
+    var backend: BackendType = BackendType.TINY_CC
     var gc: GCType = GCType.BOEHM
     var useColor: Boolean = true
     var verbose: Boolean = false

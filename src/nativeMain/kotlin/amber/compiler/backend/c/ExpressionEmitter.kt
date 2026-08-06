@@ -1,6 +1,21 @@
 package amber.compiler.backend.c
 
-import amber.compiler.ast.*
+import amber.compiler.ast.ArrayLiteralExpression
+import amber.compiler.ast.AssignmentExpression
+import amber.compiler.ast.BinaryExpression
+import amber.compiler.ast.CallExpression
+import amber.compiler.ast.CatchExpression
+import amber.compiler.ast.Expression
+import amber.compiler.ast.ExpressionStatement
+import amber.compiler.ast.IdentifierExpression
+import amber.compiler.ast.IndexAccessExpression
+import amber.compiler.ast.IsExpression
+import amber.compiler.ast.LiteralExpression
+import amber.compiler.ast.MemberAccessExpression
+import amber.compiler.ast.PanicExpression
+import amber.compiler.ast.ReturnStatement
+import amber.compiler.ast.UnaryExpression
+import amber.compiler.ast.VariableDeclaration
 import amber.compiler.symbol.Symbol
 import amber.compiler.type.Type
 import amber.runtime.RuntimeProvider
@@ -17,8 +32,7 @@ class ExpressionEmitter(
     fun emit(expression: Expression) {
         when (expression) {
             is LiteralExpression -> {
-                val value = expression.value
-                when (value) {
+                when (val value = expression.value) {
                     is String -> writer.write("\"${value.replace("\"", "\\\"")}\"")
                     is Number -> writer.write(value.toString())
                     is Boolean -> writer.write(if (value) "1" else "0")
@@ -143,7 +157,7 @@ class ExpressionEmitter(
                 writer.write("struct AMBER_RESULT __res = ")
                 emit(expression.target)
                 writer.write("; ")
-                writer.write("${cInnerType} __final_res; ")
+                writer.write("$cInnerType __final_res; ")
                 writer.write("if (__amber_rt_is_error(__res)) { ")
                 
                 if (expression.errorVarName != "_" && expression.errorVarName.isNotEmpty()) {

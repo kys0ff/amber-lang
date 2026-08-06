@@ -1,9 +1,8 @@
 package amber.compiler.pipeline
 
-import amber.compiler.CompilerConfig
 import amber.compiler.CompilationResult
+import amber.compiler.CompilerConfig
 import amber.compiler.GCType
-import amber.compiler.ast.Program
 import amber.compiler.backend.c.CBackend
 import amber.compiler.diagnostic.Diagnostic
 import amber.compiler.diagnostic.DiagnosticSeverity
@@ -12,8 +11,8 @@ import amber.compiler.lexer.Lexer
 import amber.compiler.parser.Parser
 import amber.compiler.semantic.TreeShaker
 import amber.compiler.type.TypeChecker
-import amber.runtime.CRuntimeProvider
 import amber.runtime.BoehmGC
+import amber.runtime.CRuntimeProvider
 import amber.runtime.NoGC
 
 /**

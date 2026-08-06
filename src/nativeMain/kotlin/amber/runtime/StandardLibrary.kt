@@ -240,14 +240,12 @@ object StandardLibrary {
 
     fun getIntrinsic(qualifiedName: String): Intrinsic? = intrinsics[qualifiedName]
     
-    fun getAllSymbols(): Map<String, Symbol> {
-        return intrinsics.mapValues { (qn, intr) ->
-            Symbol(
-                intr.name,
-                Type.Function(intr.params, intr.params.map { false }, intr.returns),
-                isIntrinsic = true,
-                namespace = intr.module
-            )
-        }
+    fun getAllSymbols(): Map<String, Symbol> = intrinsics.mapValues { (_, intr) ->
+        Symbol(
+            intr.name,
+            Type.Function(intr.params, intr.params.map { false }, intr.returns),
+            isIntrinsic = true,
+            namespace = intr.module
+        )
     }
 }

@@ -87,7 +87,7 @@ class CliParser {
             outputName = output,
             emitC = emitC,
             optimizationLevel = OptimizationLevel.O1,
-            backend = BackendType.TINYCC,
+            backend = BackendType.TINY_CC,
             gc = GCType.BOEHM,
             useColor = "--no-color" !in flags,
             verbose = "--verbose" in flags || "-V" in flags,
@@ -125,7 +125,7 @@ class CliParser {
               -b, --benchmark     Measure front-end, native compile, and execution durations
               -V, --verbose       Print extra diagnostic information about the build
               -q, --quiet         Suppress the build summary line
-                  --no-color      Disable ansi color output (see also NO_COLOR)
+                  --no-color      Disable ANSI color output (see also NO_COLOR)
                   --              Separator indicating all subsequent flags belong to the script
             """.trimIndent()
         )

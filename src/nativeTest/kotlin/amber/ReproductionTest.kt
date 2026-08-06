@@ -9,12 +9,12 @@ class ReproductionTest {
 
     @Test
     fun reproducesDoubleLocalAndMasking() {
-        val source = """
+        val source = $$"""
             use "core:io"
             use "core:str"
             func value(param1: any = 12): string {
                 if(param1 is number) {
-                    io.println("${'$'}param1 is a number")
+                    io.println("$param1 is a number")
                 }
                 io.println(param1)
                 return "Hi" + " and " + str.to_string(true)

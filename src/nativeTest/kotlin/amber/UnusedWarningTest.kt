@@ -7,6 +7,7 @@ import amber.compiler.parser.Parser
 import amber.compiler.type.TypeChecker
 import amber.runtime.CRuntimeProvider
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -139,8 +140,11 @@ class UnusedWarningTest {
         """.trimIndent()
         val result = transpile(source)
         val warning = result.diagnostics.find { it.message.contains("unused return value") }
-        assertTrue(warning?.suggestion == "prefix with '_' if this is intentional",
-            "Suggestion should be 'prefix with '_' if this is intentional'. Actual: ${warning?.suggestion}")
+        assertEquals(
+            warning?.suggestion,
+            "prefix with '_' if this is intentional",
+            "Suggestion should be 'prefix with '_' if this is intentional'. Actual: ${warning?.suggestion}"
+        )
     }
 
     @Test
@@ -148,8 +152,11 @@ class UnusedWarningTest {
         val source = "val x = 10"
         val result = transpile(source)
         val warning = result.diagnostics.find { it.message.contains("unused declaration: 'x'") }
-        assertTrue(warning?.suggestion == "remove it",
-            "Suggestion should be 'remove it'. Actual: ${warning?.suggestion}")
+        assertEquals(
+            warning?.suggestion,
+            "remove it",
+            "Suggestion should be 'remove it'. Actual: ${warning?.suggestion}"
+        )
     }
 
     @Test

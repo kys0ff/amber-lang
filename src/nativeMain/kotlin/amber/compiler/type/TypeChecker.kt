@@ -60,7 +60,7 @@ class TypeChecker(
 
     init {
         // Need to adapt runtimeProvider to use new Type system
-        // For now, I'll assume it's been refactored or I'll need a mapper
+        // For now, I'll assume it's been refactored, or I'll need a mapper
         // Actually, let's keep it simple and refactor RuntimeProvider later
         val globalScope = SymbolTable(initialSymbols = emptyMap()) // placeholder
         currentScope = globalScope.enterScope()
@@ -346,7 +346,6 @@ class TypeChecker(
                 val elementType = when (leftType) {
                     is Type.List -> leftType.elementType
                     is Type.ArrayList -> leftType.elementType
-                    else -> Type.Any // Should not happen
                 }
 
                 if (rightType != elementType && elementType != Type.Any && rightType != Type.Error) {
@@ -862,7 +861,7 @@ class TypeChecker(
                 namespace = importedNamespace
             )
 
-            val (_, _, importedErrors) = importedTypeChecker.check(importedProgram!!)
+            val (_, _, importedErrors) = importedTypeChecker.check(importedProgram)
 
             if (importedErrors.isNotEmpty()) {
                 errors.addAll(importedErrors)

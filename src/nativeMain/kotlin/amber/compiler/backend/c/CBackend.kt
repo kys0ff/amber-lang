@@ -1,13 +1,15 @@
 package amber.compiler.backend.c
 
-import amber.compiler.ast.*
+import amber.compiler.ast.Expression
+import amber.compiler.ast.FunctionDeclaration
+import amber.compiler.ast.Program
+import amber.compiler.ast.VariableDeclaration
 import amber.compiler.backend.Backend
 import amber.compiler.symbol.Symbol
 import amber.compiler.type.Type
-import amber.runtime.RuntimeProvider
-import amber.runtime.GarbageCollector
 import amber.runtime.BoehmGC
-import amber.runtime.NoGC
+import amber.runtime.GarbageCollector
+import amber.runtime.RuntimeProvider
 
 class CBackend(
     private val expressionTypes: Map<Expression, Type>,
