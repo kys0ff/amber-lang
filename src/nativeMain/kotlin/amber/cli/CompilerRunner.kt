@@ -2,13 +2,16 @@ package amber.cli
 
 import amber.compiler.CompilerConfig
 import amber.compiler.Transpiler
+import amber.compiler.backend.NativeCompileResult
+import amber.compiler.backend.tinycc.TccCompiler
 import amber.compiler.diagnostic.DiagnosticFormatter
 import amber.compiler.diagnostic.DiagnosticSeverity
-import amber.compiler.backend.tinycc.TccCompiler
-import amber.compiler.backend.tinycc.TccResult
 import amber.util.Ansi
+import amber.util.ensureDirectoryExists
+import amber.util.fileExists
+import amber.util.joinPaths
+import amber.util.readFile
 import kotlinx.cinterop.ExperimentalForeignApi
-import amber.util.*
 import platform.posix.fclose
 import platform.posix.fopen
 import platform.posix.fputs
@@ -17,7 +20,7 @@ import kotlin.system.exitProcess
 import kotlin.time.TimeSource
 
 class CompilerRunner(private val config: CompilerConfig) {
-    
+
     private data class Context(
         val config: CompilerConfig,
         val scriptPath: String,
@@ -26,25 +29,31 @@ class CompilerRunner(private val config: CompilerConfig) {
         val projectInfo: ProjectConfig
     )
 
+    @OptIn(ExperimentalForeignApi::class)
     fun run(scriptArgs: List<String>) {
         val timeSource = if (config.benchmark) TimeSource.Monotonic else null
         val totalStartTime = timeSource?.markNow()
 
         val projectLoader = ProjectLoader()
-        val projectResult = projectLoader.load(config.entryFile)
-        
-        val context = when (projectResult) {
+        val context = when (val projectResult = projectLoader.load(config.entryFile)) {
             is ProjectFileResult.Failure -> {
                 printError("invalid project or file: ${projectResult.errors.joinToString(", ")}")
                 exitProcess(1)
             }
+
             is ProjectFileResult.Success -> {
                 val updatedConfig = config.copy(
                     projectRoot = projectResult.projectRoot,
                     entryFile = projectResult.entryPath,
                     isProject = projectResult.projectRoot != "."
                 )
-                Context(updatedConfig, projectResult.entryPath, projectResult.projectRoot, updatedConfig.isProject, projectResult.config)
+                Context(
+                    updatedConfig,
+                    projectResult.entryPath,
+                    projectResult.projectRoot,
+                    updatedConfig.isProject,
+                    projectResult.config
+                )
             }
         }
 
@@ -99,29 +108,49 @@ class CompilerRunner(private val config: CompilerConfig) {
         val artifactBaseName = finalConfig.outputName ?: projectInfo.name
         val exePath = joinPaths(buildDir, artifactBaseName)
 
-        val libsRoot = "/home/kys0adam/IdeaProjects/amber-lang/libs"
-        val tccCompiler = TccCompiler(libsRoot)
+        val runtimeRoot = if (fileExists(
+                joinPaths(
+                    config.executableDir,
+                    "runtime"
+                )
+            )
+        ) joinPaths(
+            config.executableDir,
+            "runtime"
+        ) else "/home/kys0adam/IdeaProjects/amber-lang/runtime"
+
+        val tccCompiler = TccCompiler(runtimeRoot)
         val nativeCompileStartTime = timeSource?.markNow()
-        val compileResult = tccCompiler.compile(code, exePath)
+        val compileResult = tccCompiler.compile(code, exePath, finalConfig)
         val nativeCompileDuration = nativeCompileStartTime?.elapsedNow()
 
         when (compileResult) {
-            is TccResult.Success -> {
+            is NativeCompileResult.Success -> {
                 if (!finalConfig.quiet) {
-                    println(Ansi.green(Ansi.bold("✓")) + " compiled native " + Ansi.bold(artifactBaseName) + Ansi.dim(" -> $exePath"))
+                    println(
+                        Ansi.green(Ansi.bold("✓")) + " compiled native " + Ansi.bold(
+                            artifactBaseName
+                        ) + Ansi.dim(" -> $exePath")
+                    )
                 }
 
                 if (finalConfig.runAfterBuild) {
                     val executionStartTime = timeSource?.markNow()
                     executeNativeBinary(exePath, scriptArgs)
                     val executionDuration = executionStartTime?.elapsedNow()
-                    
+
                     if (config.benchmark) {
-                        printBenchmark(frontendDuration, nativeCompileDuration, executionDuration, totalStartTime?.elapsedNow())
+                        printBenchmark(
+                            frontendDuration,
+                            nativeCompileDuration,
+                            executionDuration,
+                            totalStartTime?.elapsedNow()
+                        )
                     }
                 }
             }
-            is TccResult.Failure -> {
+
+            is NativeCompileResult.Failure -> {
                 printError("native compilation failed: ${compileResult.message}")
                 exitProcess(1)
             }
@@ -141,13 +170,19 @@ class CompilerRunner(private val config: CompilerConfig) {
 
     @OptIn(ExperimentalForeignApi::class)
     private fun executeNativeBinary(path: String, scriptArgs: List<String>) {
-        val escapedArgs = scriptArgs.joinToString(" ") { arg -> "'" + arg.replace("'", "'\\''") + "'" }
+        val escapedArgs =
+            scriptArgs.joinToString(" ") { arg -> "'" + arg.replace("'", "'\\''") + "'" }
         val command = "$path $escapedArgs"
         val exitCode = system(command)
         if (exitCode != 0) exitProcess(exitCode)
     }
-    
-    private fun printBenchmark(frontend: kotlin.time.Duration?, native: kotlin.time.Duration?, execution: kotlin.time.Duration?, total: kotlin.time.Duration?) {
+
+    private fun printBenchmark(
+        frontend: kotlin.time.Duration?,
+        native: kotlin.time.Duration?,
+        execution: kotlin.time.Duration?,
+        total: kotlin.time.Duration?
+    ) {
         println("\n" + Ansi.cyan(Ansi.bold("--- Benchmark Information ---")))
         println("Front-end Time     : ${frontend?.inWholeMilliseconds}ms")
         println("Native Compile Time: ${native?.inWholeMilliseconds}ms")

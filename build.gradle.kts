@@ -19,20 +19,21 @@ kotlin {
         compilations.getByName("main") {
             val libgc by cinterops.creating {
                 defFile(project.file("src/nativeMain/interop/libgc.def"))
-                includeDirs(project.file("libs/include/gc"))
+                includeDirs(project.file("runtime/gc/include"))
             }
             val libtcc by cinterops.creating {
                 defFile(project.file("src/nativeMain/interop/libtcc.def"))
-                includeDirs(project.file("libs/include/tcc"))
+                includeDirs(project.file("runtime/tcc/include"))
             }
         }
         binaries {
             executable {
                 entryPoint = "amber.cli.main"
                 baseName = "amber"
-                linkerOpts("-L${project.projectDir}/libs", "-lgc", "-ltcc")
+                // Link against our own static libraries
+                linkerOpts("${project.projectDir}/runtime/gc/libgc.a")
+                linkerOpts("${project.projectDir}/runtime/tcc/libtcc.a")
                 linkerOpts("-ldl", "-lm", "-lpthread")
-                linkerOpts("-Wl,-rpath,${project.projectDir}/libs")
                 linkerOpts("-Wl,--allow-shlib-undefined")
             }
         }

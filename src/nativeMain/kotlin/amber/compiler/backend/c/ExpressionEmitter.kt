@@ -107,7 +107,15 @@ class ExpressionEmitter(
                 }
             }
             is IsExpression -> {
-                writer.write("1") 
+                val descriptor = when (expression.typeName) {
+                    "Number" -> "&__amber_type_double"
+                    "String" -> "&__amber_type_string"
+                    "Boolean" -> "&__amber_type_bool"
+                    else -> "NULL"
+                }
+                writer.write("__amber_rt_is_type(")
+                emit(expression.left)
+                writer.write(", $descriptor)")
             }
             is IndexAccessExpression -> {
                 emit(expression.target)

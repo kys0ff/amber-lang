@@ -31,6 +31,7 @@ class CBackend(
         runtimeEmitter.emitHeaders()
         runtimeEmitter.emitTypedefs()
         runtimeEmitter.emitIntrinsics()
+        runtimeEmitter.emitDefinitions()
 
         val functions = program.statements.filterIsInstance<FunctionDeclaration>().filter { !it.isIntrinsic }
         val variables = program.statements.filterIsInstance<VariableDeclaration>().filter { !it.isIntrinsic }

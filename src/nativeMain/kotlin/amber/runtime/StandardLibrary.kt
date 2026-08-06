@@ -64,7 +64,7 @@ object StandardLibrary {
                     "readln", emptyList(), Type.String, "readln",
                     cImpl = """
                         char* __amber_rt_readln() {
-                            char* buf = (char*)GC_MALLOC(1024);
+                            char* buf = (char*)__amber_rt_alloc(1024);
                             if (fgets(buf, 1024, stdin)) {
                                 size_t len = strlen(buf);
                                 if (len > 0 && buf[len-1] == '\n') buf[len-1] = '\0';
@@ -93,7 +93,7 @@ object StandardLibrary {
                     "from_number", listOf(Type.Number), Type.String, "from_number",
                     cImpl = """
                         char* __amber_rt_from_number(double n) {
-                            char* buf = (char*)GC_MALLOC(64);
+                            char* buf = (char*)__amber_rt_alloc(64);
                             snprintf(buf, 64, "%g", n);
                             return buf;
                         }
@@ -161,7 +161,7 @@ object StandardLibrary {
                             if (!l) return;
                             if (l->length >= l->capacity) {
                                 l->capacity = l->capacity == 0 ? 4 : l->capacity * 2;
-                                void** new_data = (void**)GC_MALLOC(sizeof(void*) * l->capacity);
+                                void** new_data = (void**)__amber_rt_alloc(sizeof(void*) * l->capacity);
                                 if (l->data) memcpy(new_data, l->data, sizeof(void*) * l->length);
                                 l->data = new_data;
                             }
@@ -205,7 +205,7 @@ object StandardLibrary {
                         if (!s2) return (char*)s1;
                         size_t len1 = strlen(s1);
                         size_t len2 = strlen(s2);
-                        char* res = (char*)GC_MALLOC(len1 + len2 + 1);
+                        char* res = (char*)__amber_rt_alloc(len1 + len2 + 1);
                         memcpy(res, s1, len1);
                         memcpy(res + len1, s2, len2);
                         res[len1 + len2] = '\0';
@@ -219,10 +219,11 @@ object StandardLibrary {
                 cImpl = """
                     #include <stdarg.h>
                     __amber_list_t* __amber_rt_create_list(int count, ...) {
-                        __amber_list_t* l = (__amber_list_t*)GC_MALLOC(sizeof(__amber_list_t));
+                        __amber_list_t* l = (__amber_list_t*)__amber_rt_alloc(sizeof(__amber_list_t));
+                        l->header.type = NULL; // TODO: Set List type descriptor
                         l->length = count;
                         l->capacity = count < 4 ? 4 : count;
-                        l->data = (void**)GC_MALLOC(sizeof(void*) * l->capacity);
+                        l->data = (void**)__amber_rt_alloc(sizeof(void*) * l->capacity);
                         va_list args;
                         va_start(args, count);
                         for (int i = 0; i < count; i++) {
