@@ -1,7 +1,7 @@
 package amber
 
-import amber.compiler.compilerConfig
 import amber.compiler.Transpiler
+import amber.compiler.compilerConfig
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -46,6 +46,32 @@ class ReproductionTest {
         assertTrue(error.line >= 0 && error.column >= 0, "Error should not have negative line/column")
         assertTrue(error.message.contains("expected identifier but got end of file"), "Error message should be improved")
         assertTrue(error.line == 1 && error.column == 4, "Error should be at line 1, column 4 (after 'val')")
+    }
+
+    @Test
+    fun testNamedAndPositionalArgs() {
+        val source = """
+            use "core:io"
+
+            struct user {
+              name: string = "none"
+              age: num = 16
+            }
+
+            var a = user("Alice", age = 25)
+            var b = user(age = 30, name = "Bob")
+            var c = user("Charlie")
+            
+            io.println(a.name + " " + b.name + " " + c.name)
+        """.trimIndent()
+
+        val result = transpile(source)
+        if (result.code == null) {
+            val errorMsgs = result.diagnostics.joinToString("\n") { "${it.line}:${it.column} ${it.severity}: ${it.message}" }
+            assertTrue(false, "testNamedAndPositionalArgs failed to transpile:\n$errorMsgs")
+        }
+        val code = result.code!!
+        println("Generated code:\n$code")
     }
 
     private fun transpile(source: String) = Transpiler(

@@ -12,6 +12,7 @@ import amber.compiler.ast.IndexAccessExpression
 import amber.compiler.ast.IsExpression
 import amber.compiler.ast.LiteralExpression
 import amber.compiler.ast.MemberAccessExpression
+import amber.compiler.ast.NamedArgumentExpression
 import amber.compiler.ast.PanicExpression
 import amber.compiler.ast.ReturnStatement
 import amber.compiler.ast.StringTemplateExpression
@@ -114,12 +115,13 @@ class ExpressionEmitter(
             }
             is BinaryExpression -> {
                 val leftType = expressionTypes[expression.left]
-                if (expression.operator == "+" && leftType == Type.String) {
+                val rightType = expressionTypes[expression.right]
+                if (expression.operator == "+" && (leftType == Type.String || rightType == Type.String)) {
                     writer.write(symbolEmitter.runtimeHelper("str_concat"))
                     writer.write("(")
-                    emit(expression.left)
+                    emitSegment(expression.left)
                     writer.write(", ")
-                    emit(expression.right)
+                    emitSegment(expression.right)
                     writer.write(")")
                 } else if (expression.operator == "+" && (leftType is Type.ArrayList || leftType is Type.List)) {
                     val elementType = if (leftType is Type.ArrayList) leftType.elementType else (leftType as Type.List).elementType
@@ -147,6 +149,12 @@ class ExpressionEmitter(
                 }
             }
             is CallExpression -> {
+                val calleeType = expressionTypes[expression.callee]
+                if (calleeType is Type.Struct) {
+                    emitStructConstruction(expression, calleeType)
+                    return
+                }
+
                 val calleeSymbol = resolvedSymbols[expression.callee]
                 val functionType = calleeSymbol?.type as? Type.Function
                 
@@ -183,15 +191,21 @@ class ExpressionEmitter(
                 writer.write(")")
             }
             is AssignmentExpression -> {
-                val symbol = resolvedSymbols[expression.target]
-                val name = symbol?.let { symbolEmitter.mangle(it.name, it.namespace) } ?: symbolEmitter.mangle(expression.target.name)
-                if (symbol != null && symbol.isParameter && symbol.isMutated && isPrimitive(symbol.type)) {
-                    writer.write("(*$name)")
+                val target = expression.target
+                if (target is IdentifierExpression) {
+                    val symbol = resolvedSymbols[target]
+                    val name = symbol?.let { symbolEmitter.mangle(it.name, it.namespace) } ?: symbolEmitter.mangle(target.name)
+                    if (symbol != null && symbol.isParameter && symbol.isMutated && isPrimitive(symbol.type)) {
+                        writer.write("(*$name)")
+                    } else {
+                        writer.write(name)
+                    }
                 } else {
-                    writer.write(name)
+                    emitRaw(target)
                 }
                 writer.write(" = ")
-                emit(expression.value, symbol?.type)
+                val targetType = expressionTypes[target] ?: Type.Any
+                emit(expression.value, targetType)
             }
             is MemberAccessExpression -> {
                 val targetType = expressionTypes[expression.target]
@@ -212,6 +226,9 @@ class ExpressionEmitter(
             }
             is StringTemplateExpression -> {
                 emitStringTemplate(expression.segments)
+            }
+            is NamedArgumentExpression -> {
+                emit(expression.value)
             }
             is IsExpression -> {
                 val targetType = resolvedIsTypes[expression]
@@ -344,7 +361,7 @@ class ExpressionEmitter(
     }
 
     private fun isPrimitive(type: Type): Boolean {
-        return type == Type.Number || type == Type.Boolean || type == Type.String || type == Type.Char || type is Type.Enum
+        return type == Type.Number || type == Type.Boolean || type == Type.String || type == Type.Char || type is Type.Enum || type is Type.Struct || type is Type.Unsafe
     }
 
     private fun emitSymbol(symbol: Symbol) {
@@ -375,6 +392,42 @@ class ExpressionEmitter(
         writer.write(", ")
         emitStringTemplate(segments.drop(1))
         writer.write(")")
+    }
+
+    private fun emitStructConstruction(call: CallExpression, structType: Type.Struct) {
+        val mangledName = symbolEmitter.mangle(structType.name, structType.namespace)
+        writer.write("({ ")
+        writer.write("$mangledName __am_tmp = {0}; ")
+
+        val fieldMap = structType.fields
+        val supplied = mutableMapOf<String, Expression>()
+
+        var positionalIndex = 0
+        call.arguments.forEach { arg ->
+            if (arg is NamedArgumentExpression) {
+                supplied[arg.name.name] = arg.value
+            } else {
+                val fieldName = fieldMap.keys.toList().getOrNull(positionalIndex++)
+                if (fieldName != null) {
+                    supplied[fieldName] = arg
+                }
+            }
+        }
+
+        fieldMap.values.forEach { field ->
+            writer.write("__am_tmp.${field.name} = ")
+            val expr = supplied[field.name]
+            if (expr != null) {
+                emit(expr, field.type)
+            } else if (field.defaultValue != null) {
+                emit(field.defaultValue, field.type)
+            } else {
+                writer.write("0")
+            }
+            writer.write("; ")
+        }
+
+        writer.write("__am_tmp; })")
     }
 
     private fun emitSegment(expr: Expression) {

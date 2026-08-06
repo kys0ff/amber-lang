@@ -18,12 +18,15 @@ import amber.compiler.ast.IndexAccessExpression
 import amber.compiler.ast.IsExpression
 import amber.compiler.ast.LiteralExpression
 import amber.compiler.ast.MemberAccessExpression
+import amber.compiler.ast.NamedArgumentExpression
 import amber.compiler.ast.PanicExpression
 import amber.compiler.ast.Parameter
 import amber.compiler.ast.Program
 import amber.compiler.ast.ReturnStatement
 import amber.compiler.ast.Statement
 import amber.compiler.ast.StringTemplateExpression
+import amber.compiler.ast.StructDeclaration
+import amber.compiler.ast.StructField
 import amber.compiler.ast.UnaryExpression
 import amber.compiler.ast.VariableDeclaration
 import amber.compiler.ast.WhileStatement
@@ -108,7 +111,7 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
             val token = peek()
             if (token is Token.Keyword) {
                 when (token.value) {
-                    "func", "val", "var", "if", "while", "return", "use" -> return
+                    "func", "val", "var", "if", "while", "return", "use", "struct" -> return
                 }
             }
             consume()
@@ -156,6 +159,7 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
 
                     "func" -> parseFunctionDeclaration()
                     "enum" -> parseEnumDeclaration()
+                    "struct" -> parseStructDeclaration()
                     "val", "var" -> parseVariableDeclaration()
                     "if" -> parseIfStatement()
                     "while" -> parseWhileStatement()
@@ -283,6 +287,37 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
         return EnumDeclaration(name, variants, startToken.line, startToken.column)
     }
 
+    private fun parseStructDeclaration(): StructDeclaration {
+        val startToken = expectToken("struct")
+        val name = parseIdentifierExpression()
+        expectToken("{")
+        skipNewlines()
+        val fields = mutableListOf<StructField>()
+        while (peek() !is Token.EOF && (peek() !is Token.Separator || (peek() as Token.Separator).value != "}")) {
+            fields.add(parseStructField())
+            skipNewlines()
+            if (peek() is Token.Separator && (peek() as Token.Separator).value == ",") {
+                consume()
+                skipNewlines()
+            }
+        }
+        expectToken("}")
+        return StructDeclaration(name, fields, startToken.line, startToken.column)
+    }
+
+    private fun parseStructField(): StructField {
+        val name = parseIdentifierExpression()
+        val typeAnnotation = parseOptionalTypeAnnotation()
+        var defaultValue: Expression? = null
+        skipNewlines()
+        if (peek().value() == "=") {
+            consume()
+            skipNewlines()
+            defaultValue = parseExpression()
+        }
+        return StructField(name, typeAnnotation, defaultValue, name.line, name.column)
+    }
+
     private fun parseParameter(): Parameter {
         val name = parseIdentifierExpression()
         val typeAnnotation = parseOptionalTypeAnnotation()
@@ -371,7 +406,7 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
             val operator = consume().value()
             skipNewlines()
             val right = parseAssignmentExpression()
-            if (left is IdentifierExpression) {
+            if (left is IdentifierExpression || left is MemberAccessExpression || left is IndexAccessExpression) {
                 val finalValue = if (operator == "=") right else {
                     BinaryExpression(left, operator.dropLast(1), right, left.line, left.column)
                 }
@@ -443,7 +478,7 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
         target: Expression,
         operatorToken: Token.Operator
     ): AssignmentExpression {
-        if (target !is IdentifierExpression) {
+        if (target !is IdentifierExpression && target !is MemberAccessExpression && target !is IndexAccessExpression) {
             reportError("invalid assignment target", operatorToken.line, operatorToken.column)
             throw ParserRecoveryException()
         }
@@ -762,17 +797,31 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
         val arguments = mutableListOf<Expression>()
         skipNewlines()
         if (peek().value() != ")") {
-            arguments.add(parseExpression())
+            arguments.add(parseArgument())
             skipNewlines()
             while (peek().value() == ",") {
                 consume()
                 skipNewlines()
-                arguments.add(parseExpression())
+                arguments.add(parseArgument())
                 skipNewlines()
             }
         }
         expectToken(")")
         return CallExpression(callee, arguments, openParen.line, openParen.column)
+    }
+
+    private fun parseArgument(): Expression {
+        if (peek() is Token.Identifier) {
+            val next = tokens.getOrNull(state.currentIndex + 1)
+            if (next is Token.Operator && next.value == "=") {
+                val name = parseIdentifierExpression()
+                consume() // consume "="
+                skipNewlines()
+                val value = parseExpression()
+                return NamedArgumentExpression(name, value, name.line, name.column)
+            }
+        }
+        return parseExpression()
     }
 
     private fun parseIdentifierExpression(): IdentifierExpression {

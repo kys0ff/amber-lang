@@ -10,6 +10,7 @@ import amber.compiler.ast.ImportStatement
 import amber.compiler.ast.PanicExpression
 import amber.compiler.ast.ReturnStatement
 import amber.compiler.ast.Statement
+import amber.compiler.ast.StructDeclaration
 import amber.compiler.ast.VariableDeclaration
 import amber.compiler.ast.WhileStatement
 import amber.compiler.symbol.Symbol
@@ -174,6 +175,21 @@ class StatementEmitter(
                 writer.dedent()
                 writer.writeLine("} ${symbolEmitter.mangle(enumName, ns)};")
                 writer.writeLine("__amber_type_t ${symbolEmitter.mangle("type_$enumName", ns)} = { \"$enumName\", ${100 + (ns ?: "").hashCode() + enumName.hashCode()}, $variantsVar, ${statement.variants.size} };")
+            }
+            is StructDeclaration -> {
+                val symbol = resolvedSymbols[statement.name]
+                val structType = symbol?.type as? Type.Struct
+                val ns = structType?.namespace
+                val structName = statement.name.name
+                val mangledName = symbolEmitter.mangle(structName, ns)
+
+                writer.writeLine("typedef struct {")
+                writer.indent()
+                structType?.fields?.values?.forEach { field ->
+                    writer.writeLine("${typeMapper.map(field.type)} ${field.name};")
+                }
+                writer.dedent()
+                writer.writeLine("} $mangledName;")
             }
             is ImportStatement -> {}
         }

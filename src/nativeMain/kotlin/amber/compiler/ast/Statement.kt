@@ -82,6 +82,25 @@ class BlockStatement(
     override val children: List<AstNode> get() = statements
 }
 
+class StructField(
+    val name: IdentifierExpression,
+    val typeAnnotation: String?,
+    val defaultValue: Expression?,
+    line: Int = -1,
+    column: Int = -1,
+) : BaseAstNode(line, column) {
+    override val children: List<AstNode> get() = listOfNotNull(name, defaultValue)
+}
+
+class StructDeclaration(
+    val name: IdentifierExpression,
+    val fields: List<StructField>,
+    line: Int = -1,
+    column: Int = -1,
+) : Statement(line, column) {
+    override val children: List<AstNode> get() = listOf(name) + fields
+}
+
 class ExpressionStatement(
     val expression: Expression,
     line: Int = -1,

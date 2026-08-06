@@ -59,6 +59,15 @@ class CallExpression(
     override val children: List<AstNode> get() = listOf(callee) + arguments
 }
 
+class NamedArgumentExpression(
+    val name: IdentifierExpression,
+    val value: Expression,
+    line: Int = -1,
+    column: Int = -1,
+) : Expression(line, column) {
+    override val children: List<AstNode> get() = listOf(name, value)
+}
+
 class PanicExpression(
     val message: Expression?,
     val isFatal: Boolean = false,
@@ -97,7 +106,7 @@ class ArrayLiteralExpression(
 }
 
 class AssignmentExpression(
-    val target: IdentifierExpression,
+    val target: Expression,
     val value: Expression,
     line: Int = -1,
     column: Int = -1,

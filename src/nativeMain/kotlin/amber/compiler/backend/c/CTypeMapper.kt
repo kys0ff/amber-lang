@@ -18,6 +18,7 @@ class CTypeMapper {
         is Type.Function -> "void*"
         is Type.Enum -> "int"
         is Type.EnumNamespace -> "int"
+        is Type.Struct -> SymbolEmitter().mangle(type.name, type.namespace)
         is Type.Module -> "void*"
     }
 
@@ -31,6 +32,6 @@ class CTypeMapper {
     }
 
     private fun isPrimitive(type: Type): Boolean {
-        return type == Type.Number || type == Type.Boolean || type == Type.String || type == Type.Char
+        return type == Type.Number || type == Type.Boolean || type == Type.String || type == Type.Char || type is Type.Enum || type is Type.Struct || type is Type.Unsafe
     }
 }

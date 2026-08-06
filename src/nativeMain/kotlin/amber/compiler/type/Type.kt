@@ -48,4 +48,19 @@ sealed interface Type {
     data class EnumNamespace(val enumType: Enum) : Type {
         override fun toString() = "namespace $enumType"
     }
+
+    data class Struct(
+        val name: kotlin.String,
+        val fields: Map<kotlin.String, StructField>,
+        val namespace: kotlin.String? = null
+    ) : Type {
+        override fun toString() = name
+
+        data class StructField(
+            val name: kotlin.String,
+            val type: Type,
+            val hasDefault: kotlin.Boolean,
+            val defaultValue: amber.compiler.ast.Expression? = null
+        )
+    }
 }

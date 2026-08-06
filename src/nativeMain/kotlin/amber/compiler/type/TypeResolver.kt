@@ -38,6 +38,7 @@ class TypeResolver(private val errorReporter: (node: AstNode, message: String, s
             "string" -> Type.String
             "bool" -> Type.Boolean
             "any" -> Type.Any
+            "unit" -> Type.Unit
             else -> null
         }
         if (builtinType != null) return builtinType
@@ -45,6 +46,9 @@ class TypeResolver(private val errorReporter: (node: AstNode, message: String, s
         val symbol = scope?.resolve(typeName)
         if (symbol?.type is Type.EnumNamespace) {
             return (symbol.type as Type.EnumNamespace).enumType
+        }
+        if (symbol?.type is Type.Struct) {
+            return symbol.type
         }
 
         errorReporter(

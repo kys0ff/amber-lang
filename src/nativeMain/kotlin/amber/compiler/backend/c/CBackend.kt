@@ -5,6 +5,7 @@ import amber.compiler.ast.EnumDeclaration
 import amber.compiler.ast.Expression
 import amber.compiler.ast.FunctionDeclaration
 import amber.compiler.ast.Program
+import amber.compiler.ast.StructDeclaration
 import amber.compiler.ast.VariableDeclaration
 import amber.compiler.backend.Backend
 import amber.compiler.symbol.Symbol
@@ -55,10 +56,12 @@ class CBackend(
         runtimeEmitter.emitDefinitions()
 
         val enums = program.statements.filterIsInstance<EnumDeclaration>()
+        val structs = program.statements.filterIsInstance<StructDeclaration>()
         val functions = program.statements.filterIsInstance<FunctionDeclaration>().filter { !it.isIntrinsic }
         val variables = program.statements.filterIsInstance<VariableDeclaration>().filter { !it.isIntrinsic }
 
         enums.forEach { statementEmitter.emit(it) }
+        structs.forEach { statementEmitter.emit(it) }
         variables.forEach { statementEmitter.emit(it, declarationOnly = true, isTopLevel = true) }
         functions.forEach { statementEmitter.emit(it, declarationOnly = true) }
         writer.writeLine("")
@@ -75,6 +78,7 @@ class CBackend(
                 is VariableDeclaration -> if (!stmt.isIntrinsic) statementEmitter.emit(stmt, isTopLevel = true)
                 is FunctionDeclaration -> {}
                 is EnumDeclaration -> {}
+                is StructDeclaration -> {}
                 else -> statementEmitter.emit(stmt)
             }
         }
