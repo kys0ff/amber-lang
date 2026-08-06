@@ -20,4 +20,17 @@ class CTypeMapper {
         is Type.EnumNamespace -> "int"
         is Type.Module -> "void*"
     }
+
+    fun mapParameter(type: Type, isMutated: Boolean): String {
+        val base = map(type)
+        return if (isMutated && isPrimitive(type)) {
+            "$base*"
+        } else {
+            base
+        }
+    }
+
+    private fun isPrimitive(type: Type): Boolean {
+        return type == Type.Number || type == Type.Boolean || type == Type.String || type == Type.Char
+    }
 }

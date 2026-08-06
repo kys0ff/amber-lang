@@ -85,8 +85,10 @@ class RuntimeEmitter(
         writer.writeLine("extern __amber_type_t __amber_type_double;")
         writer.writeLine("extern __amber_type_t __amber_type_string;")
         writer.writeLine("extern __amber_type_t __amber_type_bool;")
+        writer.writeLine("extern __amber_type_t __amber_type_list;")
         writer.writeLine()
         writer.writeLine("char* __amber_rt_to_string(void* val);")
+        writer.writeLine("char* __amber_rt_str_concat(const char* s1, const char* s2);")
         writer.writeLine()
     }
 
@@ -172,6 +174,7 @@ class RuntimeEmitter(
         writer.writeLine("__amber_type_t __amber_type_double = { \"num\", 1 };")
         writer.writeLine("__amber_type_t __amber_type_string = { \"string\", 2 };")
         writer.writeLine("__amber_type_t __amber_type_bool = { \"bool\", 3 };")
+        writer.writeLine("__amber_type_t __amber_type_list = { \"list\", 4 };")
         writer.writeLine()
     }
 }

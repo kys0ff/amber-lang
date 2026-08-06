@@ -27,7 +27,8 @@ sealed interface Type {
     data class Function(
         val parameterTypes: kotlin.collections.List<Type>,
         val hasDefaultValues: kotlin.collections.List<kotlin.Boolean>,
-        val returnType: Type
+        val returnType: Type,
+        val isParameterMutated: kotlin.collections.List<kotlin.Boolean> = parameterTypes.map { false }
     ) : Type {
         override fun toString() = "(${parameterTypes.joinToString(", ")}) -> $returnType"
     }

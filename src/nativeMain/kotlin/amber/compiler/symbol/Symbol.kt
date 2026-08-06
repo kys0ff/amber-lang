@@ -9,6 +9,8 @@ class Symbol(
     val name: String,
     var type: Type,
     val isMutable: Boolean = false,
+    var isMutated: Boolean = false,
+    var isParameter: Boolean = false,
     val inferableParameterIndices: MutableSet<Int> = mutableSetOf(),
     var isUsed: Boolean = false,
     val isIntrinsic: Boolean = false,

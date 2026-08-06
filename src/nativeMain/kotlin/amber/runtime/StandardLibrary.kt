@@ -19,10 +19,11 @@ class IntrinsicDSL {
         params: List<Type> = emptyList(),
         returns: Type = Type.Unit,
         cName: String? = null,
-        cImpl: String? = null
+        cImpl: String? = null,
+        isMutated: List<Boolean>? = null
     ) {
         val qualifiedName = if (currentModule != null) "$currentModule.$name" else name
-        intrinsics[qualifiedName] = Intrinsic(name, params, returns, cName ?: name, currentModule, cImpl)
+        intrinsics[qualifiedName] = Intrinsic(name, params, returns, cName ?: name, currentModule, cImpl, isMutated ?: params.map { false })
     }
 }
 
@@ -32,7 +33,8 @@ data class Intrinsic(
     val returns: Type,
     val cName: String,
     val module: String? = null,
-    val cImplementation: String? = null
+    val cImplementation: String? = null,
+    val isParameterMutated: List<Boolean> = params.map { false }
 )
 
 object StandardLibrary {
@@ -156,6 +158,7 @@ object StandardLibrary {
                     cImpl = "double __amber_rt_list_len(__amber_list_t* l) { return l ? (double)l->length : 0.0; }")
                 
                 func("push", listOf(Type.List(Type.Any), Type.Any), Type.Unit, "list_push",
+                    isMutated = listOf(true, false),
                     cImpl = """
                         void __amber_rt_list_push(__amber_list_t* l, void* val) {
                             if (!l) return;
@@ -170,6 +173,7 @@ object StandardLibrary {
                     """.trimIndent())
 
                 func("pop", listOf(Type.List(Type.Any)), Type.Any, "list_pop",
+                    isMutated = listOf(true),
                     cImpl = """
                         void* __amber_rt_list_pop(__amber_list_t* l) {
                             if (!l || l->length == 0) return NULL;
@@ -200,6 +204,16 @@ object StandardLibrary {
                         if (h->type == &__amber_type_bool) {
                             return __amber_rt_unbox_bool(val) ? "true" : "false";
                         }
+                        if (h->type == &__amber_type_list) {
+                            __amber_list_t* l = (__amber_list_t*)val;
+                            char* res = "[";
+                            for (int i = 0; i < l->length; i++) {
+                                res = __amber_rt_str_concat(res, __amber_rt_to_string(l->data[i]));
+                                if (i < l->length - 1) res = __amber_rt_str_concat(res, ", ");
+                            }
+                            res = __amber_rt_str_concat(res, "]");
+                            return res;
+                        }
                         return (char*)val;
                     }
                 """.trimIndent()
@@ -228,7 +242,7 @@ object StandardLibrary {
                     #include <stdarg.h>
                     __amber_list_t* __amber_rt_create_list(int count, ...) {
                         __amber_list_t* l = (__amber_list_t*)__amber_rt_alloc(sizeof(__amber_list_t));
-                        l->header.type = NULL; // TODO: Set List type descriptor
+                        l->header.type = &__amber_type_list;
                         l->length = count;
                         l->capacity = count < 4 ? 4 : count;
                         l->data = (void**)__amber_rt_alloc(sizeof(void*) * l->capacity);
@@ -251,7 +265,7 @@ object StandardLibrary {
     fun getAllSymbols(): Map<String, Symbol> = intrinsics.mapValues { (_, intr) ->
         Symbol(
             intr.name,
-            Type.Function(intr.params, intr.params.map { false }, intr.returns),
+            Type.Function(intr.params, intr.params.map { false }, intr.returns, intr.isParameterMutated),
             isIntrinsic = true,
             namespace = intr.module
         )

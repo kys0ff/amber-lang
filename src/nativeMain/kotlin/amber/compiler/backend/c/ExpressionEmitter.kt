@@ -51,6 +51,7 @@ class ExpressionEmitter(
             }
             is BinaryExpression -> {
                 val leftType = expressionTypes[expression.left]
+                val rightType = expressionTypes[expression.right]
                 if (expression.operator == "+" && leftType == Type.String) {
                     writer.write(symbolEmitter.runtimeHelper("str_concat"))
                     writer.write("(")
@@ -58,6 +59,33 @@ class ExpressionEmitter(
                     writer.write(", ")
                     emit(expression.right)
                     writer.write(")")
+                } else if (expression.operator == "+" && (leftType is Type.ArrayList || leftType is Type.List)) {
+                    val elementType = if (leftType is Type.ArrayList) leftType.elementType else (leftType as Type.List).elementType
+                    writer.write("({ ")
+                    writer.write("${typeMapper.map(leftType)} _l = ")
+                    emit(expression.left)
+                    writer.write("; ")
+                    writer.write(symbolEmitter.runtimeHelper("list_push"))
+                    writer.write("(_l, ")
+                    if (elementType == Type.Any && rightType == Type.Number) {
+                        writer.write("__amber_rt_box_double(")
+                        emit(expression.right)
+                        writer.write(")")
+                    } else if (elementType == Type.Any && rightType == Type.Boolean) {
+                        writer.write("__amber_rt_box_bool(")
+                        emit(expression.right)
+                        writer.write(")")
+                    } else {
+                        emit(expression.right)
+                    }
+                    writer.write("); _l; })")
+                } else if ((expression.operator == "==" || expression.operator == "!=") && leftType == Type.String) {
+                    if (expression.operator == "!=") writer.write("!")
+                    writer.write("strcmp(")
+                    emit(expression.left)
+                    writer.write(", ")
+                    emit(expression.right)
+                    writer.write(") == 0")
                 } else {
                     writer.write("(")
                     emit(expression.left)
@@ -74,7 +102,12 @@ class ExpressionEmitter(
                 writer.write("(")
                 expression.arguments.forEachIndexed { index, arg ->
                     val paramType = functionType?.parameterTypes?.getOrNull(index) ?: Type.Any
+                    val isMutated = functionType?.isParameterMutated?.getOrNull(index) ?: false
                     val argType = expressionTypes[arg]
+                    
+                    if (isMutated && isPrimitive(paramType)) {
+                        writer.write("&")
+                    }
                     
                     if (paramType == Type.Any && argType == Type.Number) {
                         writer.write("__amber_rt_box_double(")
@@ -111,7 +144,11 @@ class ExpressionEmitter(
             is AssignmentExpression -> {
                 val symbol = resolvedSymbols[expression.target]
                 val name = symbol?.let { symbolEmitter.mangle(it.name, it.namespace) } ?: symbolEmitter.mangle(expression.target.name)
-                writer.write(name)
+                if (symbol != null && symbol.isParameter && symbol.isMutated && isPrimitive(symbol.type)) {
+                    writer.write("(*$name)")
+                } else {
+                    writer.write(name)
+                }
                 writer.write(" = ")
                 emit(expression.value)
             }
@@ -245,12 +282,21 @@ class ExpressionEmitter(
         }
     }
 
+    private fun isPrimitive(type: Type): Boolean {
+        return type == Type.Number || type == Type.Boolean || type == Type.String || type == Type.Char
+    }
+
     private fun emitSymbol(symbol: Symbol) {
         val platformName = runtimeProvider.getPlatformName(symbol)
         if (platformName != null) {
             writer.write(symbolEmitter.runtimeHelper(platformName))
         } else {
-            writer.write(symbolEmitter.mangle(symbol.name, symbol.namespace))
+            val name = symbolEmitter.mangle(symbol.name, symbol.namespace)
+            if (symbol.isParameter && symbol.isMutated && isPrimitive(symbol.type)) {
+                writer.write("(*$name)")
+            } else {
+                writer.write(name)
+            }
         }
     }
 

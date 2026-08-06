@@ -51,8 +51,10 @@ class CBackend(
         val functions = program.statements.filterIsInstance<FunctionDeclaration>().filter { !it.isIntrinsic }
         val variables = program.statements.filterIsInstance<VariableDeclaration>().filter { !it.isIntrinsic }
 
-        functions.forEach { statementEmitter.emit(it) }
         variables.forEach { statementEmitter.emit(it, declarationOnly = true, isTopLevel = true) }
+        functions.forEach { statementEmitter.emit(it, declarationOnly = true) }
+        writer.writeLine("")
+        functions.forEach { statementEmitter.emit(it) }
 
         writer.writeLine("int main(int argc, char** argv) {")
         writer.indent()

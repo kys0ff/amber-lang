@@ -5,24 +5,40 @@ import amber.compiler.ast.CallExpression
 
 class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, message: String, suggestion: String?) -> Unit) {
 
+    fun isCompatible(target: Type, value: Type): Boolean {
+        if (target == Type.Any || value == Type.Error || value == Type.Nothing) return true
+        if (target == value) return true
+
+        if (target is Type.Unsafe && value == target.innerType) return true
+        if (target is Type.Unsafe && value is Type.Unsafe && value.innerType == Type.Any) return true
+
+        if (target is Type.ArrayList && value is Type.ArrayList) {
+            if (target.elementType == Type.Any || value.elementType == Type.Any) return true
+            return target.elementType == value.elementType
+        }
+        if (target is Type.List && value is Type.List) {
+            if (target.elementType == Type.Any || value.elementType == Type.Any) return true
+            return target.elementType == value.elementType
+        }
+        
+        // Dynamic Mutability: List and ArrayList are interchangeable
+        if (target is Type.List && value is Type.ArrayList) {
+            return isCompatible(target.elementType, value.elementType)
+        }
+        if (target is Type.ArrayList && value is Type.List) {
+            return isCompatible(target.elementType, value.elementType)
+        }
+
+        return false
+    }
+
     fun checkAssignmentCompatibility(
         targetType: Type,
         valueType: Type,
         node: AstNode,
         targetName: String? = null,
     ): Boolean {
-        if (targetType == Type.Any || valueType == Type.Error || valueType == Type.Nothing) return true
-        if (targetType == valueType) return true
-
-        if (targetType is Type.Unsafe && valueType == targetType.innerType) return true
-        if (targetType is Type.Unsafe && valueType is Type.Unsafe && valueType.innerType == Type.Any) return true
-
-        if (targetType is Type.ArrayList && valueType is Type.ArrayList) {
-            if (targetType.elementType == Type.Any) return true
-        }
-        if (targetType is Type.List && valueType is Type.List) {
-            if (targetType.elementType == Type.Any) return true
-        }
+        if (isCompatible(targetType, valueType)) return true
 
         val namePart = targetName?.let { "variable '$it' of " } ?: ""
         errorReporter(
@@ -39,7 +55,8 @@ class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, messag
 
         return when (operator) {
             "+" -> {
-                if (leftType is Type.ArrayList && (leftType.elementType == rightType || leftType.elementType == Type.Any)) {
+                if ((leftType is Type.ArrayList || leftType is Type.List) && 
+                    (isCompatible((leftType as? Type.ArrayList)?.elementType ?: (leftType as Type.List).elementType, rightType))) {
                     leftType
                 } else if (leftType == Type.String || rightType == Type.String) {
                     Type.String
@@ -48,8 +65,8 @@ class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, messag
                 } else {
                     errorReporter(
                         node,
-                        "invalid operands for '+': expected (num, num), (string, any), or (array_list<T>, T), got ($leftType, $rightType)",
-                        "use num for math, string for concatenation, or append to array_list"
+                        "invalid operands for '+': expected (num, num), (string, any), or (list<T>, T), got ($leftType, $rightType)",
+                        "use num for math, string for concatenation, or append to list"
                     )
                     Type.Error
                 }
@@ -173,7 +190,12 @@ class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, messag
         return true
     }
 
-    fun checkFunctionCallArguments(call: CallExpression, calleeType: Type.Function, argTypes: List<Type>): Boolean {
+    fun checkFunctionCallArguments(
+        call: CallExpression,
+        calleeType: Type.Function,
+        argTypes: List<Type>,
+        isArgMutable: List<Boolean>
+    ): Boolean {
         val minArgs = calleeType.parameterTypes.zip(calleeType.hasDefaultValues).count { (_, hasDef) -> !hasDef }
         val maxArgs = calleeType.parameterTypes.size
 
@@ -190,7 +212,18 @@ class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, messag
         var allCompatible = true
         argTypes.forEachIndexed { i, argType ->
             val expected = calleeType.parameterTypes[i]
-            if (argType != Type.Error && argType != Type.Nothing && argType != expected && expected != Type.Any) {
+            val isMutated = calleeType.isParameterMutated.getOrElse(i) { false }
+
+            if (isMutated && !isArgMutable.getOrElse(i) { false }) {
+                errorReporter(
+                    call.arguments[i],
+                    "argument ${i + 1} must be a mutable 'var' because the function modifies it",
+                    "declare the variable with 'var' instead of 'val'"
+                )
+                allCompatible = false
+            }
+
+            if (argType != Type.Error && argType != Type.Nothing && !isCompatible(expected, argType)) {
                 errorReporter(
                     call.arguments[i],
                     "argument ${i + 1} type mismatch: expected $expected, got $argType",
@@ -203,10 +236,7 @@ class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, messag
     }
 
     fun checkReturnType(returnedType: Type, expectedReturnType: Type, node: AstNode): Boolean {
-        if (expectedReturnType == Type.Any || returnedType == Type.Error || returnedType == Type.Nothing) return true
-        if (returnedType == expectedReturnType) return true
-        if (expectedReturnType is Type.Unsafe && returnedType == expectedReturnType.innerType) return true
-        if (expectedReturnType is Type.Unsafe && returnedType is Type.Unsafe && returnedType.innerType == Type.Any) return true
+        if (isCompatible(expectedReturnType, returnedType)) return true
 
         errorReporter(
             node,

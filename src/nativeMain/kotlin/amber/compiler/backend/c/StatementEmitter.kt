@@ -69,24 +69,30 @@ class StatementEmitter(
                 statement.parameters.forEachIndexed { index, param ->
                     val paramSymbol = resolvedSymbols[param.name]
                     val paramType = paramSymbol?.type ?: Type.Any
+                    val funcType = symbol?.type as? Type.Function
+                    val isMutated = funcType?.isParameterMutated?.getOrElse(index) { false } ?: false
                     val paramName = paramSymbol?.let { symbolEmitter.mangle(it.name, it.namespace) } ?: symbolEmitter.mangle(param.name.name)
-                    writer.write("${typeMapper.map(paramType)} $paramName")
+                    writer.write("${typeMapper.mapParameter(paramType, isMutated)} $paramName")
                     if (index < statement.parameters.size - 1) writer.write(", ")
                 }
-                writer.writeLine(") {")
-                writer.indent()
-                returnTypeStack.add(returnType)
-                statement.body?.statements?.forEachIndexed { index, bodyStmt ->
-                    val isLast = index == statement.body.statements.size - 1
-                    if (isLast && bodyStmt is ExpressionStatement && returnType != Type.Unit) {
-                        emit(ReturnStatement(bodyStmt.expression, bodyStmt.line, bodyStmt.column))
-                    } else {
-                        emit(bodyStmt)
+                if (declarationOnly) {
+                    writer.writeLine(");")
+                } else {
+                    writer.writeLine(") {")
+                    writer.indent()
+                    returnTypeStack.add(returnType)
+                    statement.body?.statements?.forEachIndexed { index, bodyStmt ->
+                        val isLast = index == statement.body.statements.size - 1
+                        if (isLast && bodyStmt is ExpressionStatement && returnType != Type.Unit) {
+                            emit(ReturnStatement(bodyStmt.expression, bodyStmt.line, bodyStmt.column))
+                        } else {
+                            emit(bodyStmt)
+                        }
                     }
+                    returnTypeStack.removeAt(returnTypeStack.size - 1)
+                    writer.dedent()
+                    writer.writeLine("}")
                 }
-                returnTypeStack.removeAt(returnTypeStack.size - 1)
-                writer.dedent()
-                writer.writeLine("}")
             }
             is ExpressionStatement -> {
                 val expr = statement.expression

@@ -241,12 +241,8 @@ class TypeChecker(
             reportWarning(declaration, "useless '!': initializer is already safe (type $initializerType)")
         }
 
-        if (declaration.initializer is ArrayLiteralExpression && initializerType is Type.List) {
-            initializerType = if (declaration.isMutable) {
-                Type.ArrayList(initializerType.elementType)
-            } else {
-                initializerType
-            }
+        if (initializerType is Type.List && (declaration.isMutable || declaration.initializer is ArrayLiteralExpression)) {
+            initializerType = Type.ArrayList(initializerType.elementType)
         }
 
         val finalType: Type
@@ -380,6 +376,15 @@ class TypeChecker(
             }
 
             if (leftType is Type.List || leftType is Type.ArrayList) {
+                if (!isExpressionMutable(binary.left)) {
+                    reportError(
+                        binary.left,
+                        "cannot use '+' to append to an immutable list",
+                        "declare the list with 'var' instead of 'val'"
+                    )
+                }
+                markAsMutated(binary.left)
+
                 val elementType = when (leftType) {
                     is Type.List -> leftType.elementType
                     is Type.ArrayList -> leftType.elementType
@@ -427,12 +432,49 @@ class TypeChecker(
         }
 
         val argTypes = call.arguments.map { visitExpression(it) }
+        val isArgMutable = call.arguments.map { isExpressionMutable(it) }
+        
         if (isValidArgumentCount(calleeType, argTypes.size)) {
             calleeType = inferFunctionTypeFromFirstCall(functionSymbol, calleeType, argTypes)
         }
-        typeCompatibilityChecker.checkFunctionCallArguments(call, calleeType, argTypes)
+        
+        // Mark arguments as mutated if the callee mutates them
+        call.arguments.forEachIndexed { i, arg ->
+            if (calleeType.isParameterMutated.getOrElse(i) { false }) {
+                markAsMutated(arg)
+            }
+        }
+        
+        typeCompatibilityChecker.checkFunctionCallArguments(call, calleeType, argTypes, isArgMutable)
 
         return calleeType.returnType
+    }
+
+    private fun markAsMutated(expression: Expression) {
+        when (expression) {
+            is IdentifierExpression -> {
+                val symbol = currentScope.resolve(expression.name)
+                symbol?.isMutated = true
+            }
+            is IndexAccessExpression -> markAsMutated(expression.target)
+            is MemberAccessExpression -> markAsMutated(expression.target)
+            is ArrayLiteralExpression -> {
+                expression.elements.forEach { markAsMutated(it) }
+            }
+            else -> {}
+        }
+    }
+    
+    private fun isExpressionMutable(expression: Expression): Boolean {
+        return when (expression) {
+            is IdentifierExpression -> {
+                val symbol = currentScope.resolve(expression.name)
+                symbol?.isMutable ?: false
+            }
+            is IndexAccessExpression -> isExpressionMutable(expression.target)
+            is MemberAccessExpression -> isExpressionMutable(expression.target)
+            else -> false
+        }
     }
 
     private fun resolveCalledFunctionSymbol(callee: Expression): Symbol? {
@@ -494,6 +536,7 @@ class TypeChecker(
             return Type.Error
         }
         resolvedSymbols[assignment.target] = targetSymbol
+        targetSymbol.isMutated = true
         if (!targetSymbol.isMutable) {
             reportError(
                 assignment,
@@ -806,7 +849,16 @@ class TypeChecker(
         if (isImplicitReturn) {
             val inferenceScope = currentScope.enterScope()
             function.parameters.forEachIndexed { index, param ->
-                inferenceScope.define(Symbol(param.name.name, paramTypes[index], line = param.name.line, column = param.name.column))
+                inferenceScope.define(
+                    Symbol(
+                        param.name.name,
+                        paramTypes[index],
+                        isMutable = true,
+                        isParameter = true,
+                        line = param.name.line,
+                        column = param.name.column
+                    )
+                )
             }
             val originalScope = currentScope
             currentScope = inferenceScope
@@ -825,7 +877,18 @@ class TypeChecker(
         val previousPropagated = currentFunctionPropagatedUnsafe
         currentFunctionPropagatedUnsafe = false
 
-        val functionType = Type.Function(paramTypes, hasDefaultValues, declaredReturnType)
+        var functionType = Type.Function(paramTypes, hasDefaultValues, declaredReturnType)
+        
+        if (function.isIntrinsic) {
+            val qualifiedName = if (namespace != null) "$namespace.${function.name.name}" else function.name.name
+            val intrinsic = runtimeProvider.getAllIntrinsicSymbols()[qualifiedName]
+            if (intrinsic != null && intrinsic.type is Type.Function) {
+                functionType = functionType.copy(
+                    isParameterMutated = (intrinsic.type as Type.Function).isParameterMutated
+                )
+            }
+        }
+        
         val functionSymbol = Symbol(
             function.name.name,
             functionType,
@@ -837,15 +900,19 @@ class TypeChecker(
         )
         defineSymbol(function.name, functionSymbol)
 
+        val paramSymbols = mutableListOf<Symbol>()
         currentScope = currentScope.enterScope()
         function.parameters.forEachIndexed { index, param ->
             val paramType = paramTypes[index]
             val symbol = Symbol(
                 param.name.name,
                 paramType,
+                isMutable = true, // Allow modification inside function
+                isParameter = true,
                 line = param.name.line,
                 column = param.name.column
             )
+            paramSymbols.add(symbol)
             if (function.isIntrinsic) symbol.isUsed = true
             defineSymbol(param.name, symbol)
         }
@@ -859,6 +926,12 @@ class TypeChecker(
                     "add a return statement at the end of the function or in all execution paths"
                 )
             }
+        }
+        
+        // Update function type with mutation info inferred from body
+        if (!function.isIntrinsic) {
+            val mutationInfo = paramSymbols.map { it.isMutated }
+            functionSymbol.type = (functionSymbol.type as Type.Function).copy(isParameterMutated = mutationInfo)
         }
 
         if (declaredReturnType is Type.Unsafe && !currentFunctionPropagatedUnsafe && !function.isIntrinsic) {
