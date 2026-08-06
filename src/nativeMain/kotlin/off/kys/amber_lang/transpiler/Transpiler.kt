@@ -1,8 +1,8 @@
 package off.kys.amber_lang.transpiler
 
-import off.kys.amber_lang.runtime.BashRuntimeProvider
+import off.kys.amber_lang.runtime.CRuntimeProvider
 import off.kys.amber_lang.transpiler.ast.Program
-import off.kys.amber_lang.transpiler.codegen.BashCodeGenerator
+import off.kys.amber_lang.transpiler.backend.CBackend
 import off.kys.amber_lang.transpiler.lexer.Lexer
 import off.kys.amber_lang.transpiler.parser.Parser
 import off.kys.amber_lang.transpiler.type.TypeChecker
@@ -16,12 +16,12 @@ class Transpiler(
 ) {
 
     /**
-     * Transpiles the source code to Bash.
+     * Compiles the source code to C.
      * Returns a structured TranspilationResult containing the code and/or a list of errors.
      */
     fun transpile(): TranspilationResult {
         // 0. Runtime Provider
-        val runtimeProvider = BashRuntimeProvider()
+        val runtimeProvider = CRuntimeProvider()
 
         // 1. Lexing and Parsing
         val (mainProgram, parseErrors) = parseSource(sourceCode)
@@ -41,7 +41,7 @@ class Transpiler(
 
         // 3. Optimization (Tree Shaking)
         val shaker = TreeShaker(typeChecker.importedModulePrograms)
-        val usedSymbols = shaker.shake(mainProgram)
+        shaker.shake(mainProgram)
 
         // 4. Report unused exports from imported modules
         typeChecker.importedModuleTypeCheckers.values.forEach { it.reportUnusedExports() }
@@ -61,16 +61,14 @@ class Transpiler(
         }
 
         return try {
-            val codeGenerator = BashCodeGenerator(
+            val codeGenerator = CBackend(
                 allExpressionTypes,
                 allResolvedSymbols,
-                typeChecker.importedModulePrograms,
-                usedSymbols,
                 runtimeProvider
             )
             TranspilationResult(codeGenerator.generate(mainProgram), allDiagnostics)
         } catch (e: Exception) {
-            TranspilationResult(null, listOf(GenericDiagnostic(currentFilePath, 0, 0, e.message ?: "unknown error", type = "Codegen Error")))
+            TranspilationResult(null, allDiagnostics + listOf(GenericDiagnostic(currentFilePath, 0, 0, e.message ?: "unknown error", type = "Codegen Error")))
         }
     }
 

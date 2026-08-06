@@ -4,6 +4,8 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import off.kys.amber_lang.transpiler.DiagnosticFormatter
 import off.kys.amber_lang.transpiler.Severity
 import off.kys.amber_lang.transpiler.Transpiler
+import off.kys.amber_lang.transpiler.backend.TccCompiler
+import off.kys.amber_lang.transpiler.backend.TccResult
 import off.kys.amber_lang.utils.fileExists
 import off.kys.amber_lang.utils.getExecutableDirectory
 import off.kys.amber_lang.utils.getPathParent
@@ -15,16 +17,13 @@ import platform.posix.S_IROTH
 import platform.posix.S_IRWXG
 import platform.posix.S_IRWXU
 import platform.posix.S_IXOTH
-import platform.posix.fclose
-import platform.posix.fflush
-import platform.posix.fopen
-import platform.posix.fputs
 import platform.posix.getenv
 import platform.posix.mkdir
-import platform.posix.pclose
-import platform.posix.popen
+import platform.posix.system
 import kotlin.system.exitProcess
 import kotlin.time.TimeSource
+
+private const val LIBS_PATH = "libs"
 
 data class ProjectConfig(
     val name: String,
@@ -65,6 +64,7 @@ sealed class ProjectFileResult {
     data class Failure(val errors: List<String>) : ProjectFileResult()
 }
 
+@OptIn(ExperimentalForeignApi::class)
 fun main(args: Array<String>) {
     // Separate transpiler flags from the executed script arguments using '--'
     val dashDashIndex = args.indexOf("--")
@@ -94,10 +94,15 @@ fun main(args: Array<String>) {
     var isProject = false
     var projectConfig: ProjectConfig? = null
 
-    val (scriptPath, projectRoot) = if (isDirectory(absoluteTarget)) {
-        val projectFilePath = joinPaths(absoluteTarget, "project")
+    val targetBaseName = absoluteTarget.substringAfterLast('/').substringAfterLast('\\')
+    val isExplicitProjectFile = !isDirectory(absoluteTarget) && targetBaseName == "project"
+
+    val (scriptPath, projectRoot) = if (isDirectory(absoluteTarget) || isExplicitProjectFile) {
+        val currentProjectRoot = if (isDirectory(absoluteTarget)) absoluteTarget else (getPathParent(absoluteTarget) ?: ".")
+        val projectFilePath = joinPaths(currentProjectRoot, "project")
+        
         if (!fileExists(projectFilePath)) {
-            printCliError("no 'project' file found in $absoluteTarget")
+            printCliError("no 'project' file found in $currentProjectRoot")
             println(Ansi.dim("  hint: run inside a directory containing a 'project' file, or pass a .amb file directly"))
             exitProcess(1)
         }
@@ -113,12 +118,12 @@ fun main(args: Array<String>) {
         }
         projectConfig = config
 
-        val entryPath = normalizePath(joinPaths(absoluteTarget, config.entry))
+        val entryPath = normalizePath(joinPaths(currentProjectRoot, config.entry))
         if (!fileExists(entryPath)) {
-            printCliError("entry file '${config.entry}' not found in $absoluteTarget")
+            printCliError("entry file '${config.entry}' not found in $currentProjectRoot")
             exitProcess(1)
         }
-        Pair(entryPath, absoluteTarget)
+        Pair(entryPath, currentProjectRoot)
     } else {
         if (!fileExists(absoluteTarget)) {
             printCliError("file or directory not found: $target")
@@ -158,41 +163,49 @@ fun main(args: Array<String>) {
         }
     }
 
-    val bashCode = result.code
-    if (bashCode != null) {
+    val code = result.code
+    if (code != null) {
         val buildDir = joinPaths(projectRoot, ".build")
         ensureDirectoryExists(buildDir)
 
         val artifactBaseName = projectConfig?.name
             ?: sanitizeFileName(baseNameWithoutExtension(scriptPath))
-        val buildArtifactPath = joinPaths(buildDir, "$artifactBaseName.sh")
-        writeTextToFile(buildArtifactPath, bashCode)
-
-        if (!isQuiet) {
-            val label = projectConfig?.let { "${it.name} v${it.version}" } ?: artifactBaseName
-            println(Ansi.green(Ansi.bold("✓")) + " built " + Ansi.bold(label) + Ansi.dim(" -> $buildArtifactPath"))
-        }
-
+        
         val shouldRun = compilerArgs.contains("--run") || compilerArgs.contains("-r") || !compilerArgs.any { it == "--no-run" }
 
-        if (shouldRun) {
-            val executionStartTime = timeSource?.markNow()
-            executeBashCode(bashCode, scriptArgs)
-            val executionDuration = executionStartTime?.elapsedNow()
+        val exePath = joinPaths(buildDir, artifactBaseName)
+        
+        var libsRoot = normalizePath(joinPaths(executableDir, LIBS_PATH))
+        if (!isDirectory(libsRoot)) {
+            // Fallback for development: check project root
+            libsRoot = "/home/kys0adam/IdeaProjects/amber-lang/libs"
+        }
+        
+        val tccCompiler = TccCompiler(libsRoot)
+        when (val compileResult = tccCompiler.compile(code, exePath)) {
+            is TccResult.Success -> {
+                if (!isQuiet) {
+                    val label = projectConfig?.let { "${it.name} v${it.version}" } ?: artifactBaseName
+                    println(Ansi.green(Ansi.bold("✓")) + " compiled native " + Ansi.bold(label) + Ansi.dim(" -> $exePath"))
+                }
+                
+                if (shouldRun) {
+                    val executionStartTime = timeSource?.markNow()
+                    executeNativeBinary(exePath, scriptArgs)
+                    val executionDuration = executionStartTime?.elapsedNow()
 
-            if (isBenchmark && transpileDuration != null && executionDuration != null && totalStartTime != null) {
-                println("\n" + Ansi.cyan(Ansi.bold("--- Benchmark Information ---")))
-                println("Transpilation Time : ${transpileDuration.inWholeMilliseconds}ms")
-                println("Execution Time     : ${executionDuration.inWholeMilliseconds}ms")
-                println("Total Pipeline Time: ${totalStartTime.elapsedNow().inWholeMilliseconds}ms")
-                println(Ansi.cyan(Ansi.bold("-----------------------------")))
+                    if (isBenchmark && transpileDuration != null && executionDuration != null && totalStartTime != null) {
+                        println("\n" + Ansi.cyan(Ansi.bold("--- Benchmark Information ---")))
+                        println("Transpilation Time : ${transpileDuration.inWholeMilliseconds}ms")
+                        println("Execution Time     : ${executionDuration.inWholeMilliseconds}ms")
+                        println("Total Pipeline Time: ${totalStartTime.elapsedNow().inWholeMilliseconds}ms")
+                        println(Ansi.cyan(Ansi.bold("-----------------------------")))
+                    }
+                }
             }
-        } else {
-            println(bashCode)
-            if (isBenchmark && transpileDuration != null) {
-                println("\n" + Ansi.cyan(Ansi.bold("--- Benchmark Information ---")))
-                println("Transpilation Time : ${transpileDuration.inWholeMilliseconds}ms")
-                println(Ansi.cyan(Ansi.bold("-----------------------------")))
+            is TccResult.Failure -> {
+                printCliError("native compilation failed: ${compileResult.message}")
+                exitProcess(1)
             }
         }
     } else {
@@ -291,7 +304,7 @@ private fun baseNameWithoutExtension(path: String): String {
 fun printHelp() {
     println(
         """
-        ${Ansi.bold("Amber Transpiler CLI")}
+        ${Ansi.bold("Amber Compiler CLI")}
         ${Ansi.dim("Usage:")} amber [options] [path] [-- script_args]
 
         ${Ansi.bold("path")}
@@ -300,9 +313,9 @@ fun printHelp() {
 
         ${Ansi.bold("options")}
           -h, --help       Show this help message
-          -r, --run        Run the generated bash code immediately (default)
-          --no-run         Only output the generated bash code
-          -b, --benchmark  Measure execution and transpilation durations
+          -r, --run        Run the generated native executable immediately (default)
+          --no-run         Only output the generated native executable
+          -b, --benchmark  Measure execution and compilation durations
           -q, --quiet      Suppress the build summary line
           -v, --version    Show version information
           --               Separator indicating all subsequent flags belong to the script
@@ -315,13 +328,12 @@ fun printHelp() {
             version = 0.1.0        ${Ansi.dim("(optional, defaults to 0.0.1)")}
             entry   = main.amb     ${Ansi.dim("(optional, defaults to main.amb)")}
 
-          The generated script is written to .build/<name>.sh
+          The generated binary is written to .build/<name>
 
         ${Ansi.bold("examples")}
           amber                        ${Ansi.dim("# build & run the project in the current directory")}
           amber ./myproject            ${Ansi.dim("# build & run a project directory")}
           amber script.amb             ${Ansi.dim("# build & run a single script")}
-          amber --no-run script.amb    ${Ansi.dim("# print generated bash instead of running it")}
           amber script.amb -- --flag   ${Ansi.dim("# forward '--flag' to the running script")}
         """.trimIndent()
     )
@@ -335,41 +347,12 @@ fun ensureDirectoryExists(path: String) {
 }
 
 @OptIn(ExperimentalForeignApi::class)
-fun writeTextToFile(path: String, text: String) {
-    val file = fopen(path, "w")
-    if (file != null) {
-        fputs(text, file)
-        fclose(file)
+fun executeNativeBinary(path: String, scriptArgs: List<String>) {
+    val escapedArgs = scriptArgs.joinToString(" ") { arg ->
+        "'" + arg.replace("'", "'\\''") + "'"
     }
-}
-
-/**
- * Feeds the generated string directly into a bash process over stdin,
- * appending the forwarded script arguments via bash -s.
- */
-@OptIn(ExperimentalForeignApi::class)
-fun executeBashCode(code: String, scriptArgs: List<String>) {
-    // bash -s reads from stdin and maps trailing elements to $1, $2, etc.
-    // Wrap arguments in single quotes and escape existing single quotes to prevent injection bugs.
-    val command = if (scriptArgs.isEmpty()) {
-        "bash"
-    } else {
-        val escapedArgs = scriptArgs.joinToString(" ") { arg ->
-            "'" + arg.replace("'", "'\\''") + "'"
-        }
-        "bash -s -- $escapedArgs"
-    }
-
-    val pipe = popen(command, "w")
-    if (pipe == null) {
-        println("error: failed to launch bash process via popen")
-        exitProcess(1)
-    }
-
-    fputs(code, pipe)
-    fflush(pipe)
-
-    val exitCode = pclose(pipe)
+    val command = "$path $escapedArgs"
+    val exitCode = system(command)
     if (exitCode != 0) {
         exitProcess(exitCode)
     }

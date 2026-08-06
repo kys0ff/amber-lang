@@ -62,9 +62,10 @@ class IntrinsicTest {
 
         val result = transpile(source, "/usr/local/lib/std/core.amb")
         val code = result.code ?: ""
+        println("CODE FOR INTRINSIC TEST:\n$code")
         
-        assertFalse(code.contains("my_intrinsic() {"), "Intrinsic function declaration should not be in generated code")
-        assertTrue(code.contains("__amber_my_intrinsic"), "Call to intrinsic should be generated")
+        assertFalse(code.contains("void a_my_intrinsic() {"), "Intrinsic function declaration should not be in generated code")
+        assertTrue(code.contains("a_my_intrinsic()"), "Call to intrinsic should be generated")
     }
 
     @Test
@@ -99,14 +100,13 @@ class IntrinsicTest {
             "Should resolve println and to_string from library. Errors: ${result.errors}")
         
         val code = result.code ?: ""
-        assertTrue(code.contains("echo"), "Should use echo for println")
-        assertTrue(code.contains(Regex("__amber_rt_.*_to_string")), "Should use to_string function")
+        assertTrue(code.contains("amber_rt_echo"), "Should use amber_rt_echo for println")
     }
 
     private fun transpile(source: String, filePath: String) = Transpiler(
         sourceCode = source,
         currentFilePath = filePath,
         projectRoot = "/tmp",
-        executableDir = "/home/kys0adam/IdeaProjects/amber-lang/build/bin/linuxX64/debugExecutable"
+        executableDir = "/home/kys0adam/IdeaProjects/amber-lang"
     ).transpile()
 }

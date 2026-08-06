@@ -66,7 +66,14 @@ class ImportResolver(
         val resolvedPath = when {
             importPath.startsWith("core:") -> {
                 val subPath = importPath.removePrefix("core:").replace(":", "/")
-                joinPaths(executableDir, "lib/std", subPath)
+                val primaryPath = joinPaths(executableDir, "lib/std", subPath)
+                // Check if file exists (with or without extension)
+                if (fileExists(primaryPath) || fileExists("$primaryPath.amb")) {
+                    primaryPath
+                } else {
+                    // Fallback to current working directory's lib/std (useful during development)
+                    joinPaths(".", "lib/std", subPath)
+                }
             }
             importPath.startsWith("local:") -> {
                 if (!isProject) {

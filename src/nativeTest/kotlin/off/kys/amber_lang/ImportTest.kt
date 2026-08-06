@@ -1,5 +1,6 @@
 package off.kys.amber_lang
 
+import off.kys.amber_lang.transpiler.Severity
 import off.kys.amber_lang.transpiler.Transpiler
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -16,11 +17,10 @@ class ImportTest {
         """.trimIndent()
         val result = transpile(source, isProject = false)
         
-        // Let's print the errors to see what we get
         result.errors.forEach { println("Error: ${it.message}") }
         
-        assertTrue(result.errors.any { it.message.contains("import error") || it.message.contains("could not resolve") || it.type.contains("Import Error") }, 
-            "Should attempt to resolve core:math. Actual errors: ${result.errors.map { it.message }}")
+        assertTrue(!result.errors.any { it.severity == Severity.ERROR }, 
+            "Should resolve core:math without errors. Actual errors: ${result.errors.map { it.message }}")
     }
 
     @Test
@@ -76,6 +76,6 @@ class ImportTest {
         currentFilePath = "/tmp/test.amb",
         projectRoot = "/tmp",
         isProject = isProject,
-        executableDir = "/tmp/bin"
+        executableDir = "/home/kys0adam/IdeaProjects/amber-lang"
     ).transpile()
 }

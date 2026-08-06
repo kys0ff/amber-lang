@@ -1,0 +1,3 @@
+headers = libtcc.h
+headerFilter = libtcc.h
+package = off.kys.amber_lang.interop.tcc

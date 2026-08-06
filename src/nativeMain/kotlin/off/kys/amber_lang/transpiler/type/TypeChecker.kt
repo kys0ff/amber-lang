@@ -276,7 +276,7 @@ class TypeChecker(
     private fun visitIdentifierExpression(identifier: IdentifierExpression): Type {
         val symbol = currentScope.resolve(identifier.name)
         if (symbol != null) {
-            if (symbol.name == "to_string" && symbol.isIntrinsic && !isStandardLibraryFile(currentFilePath) && identifier.name == "to_string") {
+            if (symbol.name == "to_string" && symbol.isIntrinsic && !isStandardLibraryFile(currentFilePath) && identifier.name == "to_string" && !identifier.isSynthetic) {
                 reportError(
                     identifier,
                     "direct use of 'to_string' is not allowed",
@@ -296,7 +296,7 @@ class TypeChecker(
             }
 
             // Special error message for to_string
-            if (identifier.name == "to_string") {
+            if (identifier.name == "to_string" && !identifier.isSynthetic) {
                 reportError(
                     identifier,
                     "direct use of 'to_string' is not allowed",

@@ -1,0 +1,3 @@
+headers = gc.h
+headerFilter = gc.h
+package = off.kys.amber_lang.interop.gc

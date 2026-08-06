@@ -2,7 +2,6 @@ package off.kys.amber_lang
 
 import off.kys.amber_lang.transpiler.Transpiler
 import kotlin.test.Test
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ReproductionTest {
@@ -24,22 +23,15 @@ class ReproductionTest {
 
         val result = transpile(source)
         if (result.code == null) {
-            println("ERRORS in ReproductionTest: " + result.errors.joinToString { "${it.severity}: ${it.message}" })
+            val errorMsgs = result.errors.joinToString { "${it.severity}: ${it.message}" }
+            assertTrue(false, "ReproductionTest failed to transpile: $errorMsgs")
         }
         val code = result.code!!
         println("Generated code:\n$code")
 
-        // Check for double local
-        assertFalse(code.contains("local     local"), "Should not contain double local declaration")
-        
-        // Check for masking return values (local and assignment on same line)
-        // This regex looks for 'local' followed by an assignment that contains a command substitution '$('
-        val maskingRegex = Regex("""local\s+\w+=[^ \n]*\$\(""")
-        assertFalse(maskingRegex.containsMatchIn(code), "Should not mask return values by assigning local variables with command substitution on the same line")
-
-        // Check for indentation of the second local declaration in the "declare and assign" pattern
-        assertTrue(code.contains(Regex(""" {4}local __amber_tmp_""")), "Temporary variables should be declared with correct indentation")
-        assertTrue(code.contains(Regex("""\n {4}__amber_tmp_""")), "Temporary variables should be assigned on a new line with correct indentation")
+        // Check for basic C structure
+        assertTrue(code.contains("int main("), "Should contain main function")
+        assertTrue(code.contains("a_value("), "Should contain a_value function")
     }
 
     @Test
@@ -61,6 +53,6 @@ class ReproductionTest {
         sourceCode = source,
         currentFilePath = "/tmp/test.amb",
         projectRoot = "/tmp",
-        executableDir = "/home/kys0adam/IdeaProjects/amber-lang/build/bin/linuxX64/debugExecutable"
+        executableDir = "/home/kys0adam/IdeaProjects/amber-lang"
     ).transpile()
 }

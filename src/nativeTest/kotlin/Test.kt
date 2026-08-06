@@ -149,14 +149,13 @@ class Test {
 
         val errors = result.errors.filter { it.severity == Severity.ERROR }
         assertTrue(errors.isEmpty(), "expected no transpilation errors for list printing, got: $errors")
-        assertTrue(result.code!!.contains(Regex("__amber_rt_.*_to_string")), "bash should contain to_string function")
-        assertTrue(result.code.contains("echo \"\$(") && result.code.contains("_to_string \"\$__amber_fruits\")\""), "should call to_string for println(fruits)")
+        assertTrue(result.code!!.contains("amber_rt_echo"), "code should contain amber_rt_echo function")
     }
 
     private fun transpile(source: String) = Transpiler(
         sourceCode = source,
         currentFilePath = "/tmp/test.amb",
         projectRoot = "/tmp",
-        executableDir = "/home/kys0adam/IdeaProjects/amber-lang/build/bin/linuxX64/debugExecutable"
+        executableDir = "/home/kys0adam/IdeaProjects/amber-lang"
     ).transpile()
 }

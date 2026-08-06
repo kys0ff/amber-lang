@@ -34,7 +34,7 @@ class UnusedWarningTest {
         val typeChecker = off.kys.amber_lang.transpiler.type.TypeChecker(
             projectRoot = "/tmp",
             currentFilePath = "/tmp/imported.amb",
-            runtimeProvider = off.kys.amber_lang.runtime.BashRuntimeProvider(),
+            runtimeProvider = off.kys.amber_lang.runtime.CRuntimeProvider(),
             isMainFile = false, // This is the key
             isProject = false,
             executableDir = "/tmp"
@@ -60,7 +60,7 @@ class UnusedWarningTest {
         val typeChecker = off.kys.amber_lang.transpiler.type.TypeChecker(
             projectRoot = "/tmp",
             currentFilePath = "/tmp/main.amb",
-            runtimeProvider = off.kys.amber_lang.runtime.BashRuntimeProvider(),
+            runtimeProvider = off.kys.amber_lang.runtime.CRuntimeProvider(),
             isMainFile = true, // Main file
             isProject = false,
             executableDir = "/tmp"
@@ -192,6 +192,6 @@ class UnusedWarningTest {
         currentFilePath = "/tmp/test.amb",
         projectRoot = "/tmp",
         isProject = false,
-        executableDir = "/home/kys0adam/IdeaProjects/amber-lang/build/bin/linuxX64/debugExecutable"
+        executableDir = "/home/kys0adam/IdeaProjects/amber-lang"
     ).transpile()
 }
