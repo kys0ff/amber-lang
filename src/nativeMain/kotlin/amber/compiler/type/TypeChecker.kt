@@ -47,6 +47,7 @@ class TypeChecker(
     private var currentScope: SymbolTable
     internal val expressionTypes = mutableMapOf<Expression, Type>()
     internal val resolvedSymbols = mutableMapOf<Expression, Symbol>()
+    internal val resolvedIsTypes = mutableMapOf<IsExpression, Type>()
     val errors = mutableListOf<Diagnostic>()
     private var currentFunctionReturnType: Type? = null
     private var currentFunctionPropagatedUnsafe = false
@@ -412,7 +413,8 @@ class TypeChecker(
 
     private fun visitIsExpression(isExpr: IsExpression): Type {
         visitExpression(isExpr.left)
-        typeResolver.resolveType(isExpr.typeName, isExpr, currentScope)
+        val targetType = typeResolver.resolveType(isExpr.typeName, isExpr, currentScope)
+        resolvedIsTypes[isExpr] = targetType
         return Type.Boolean
     }
 
@@ -668,6 +670,7 @@ class TypeChecker(
             is Type.List -> targetType.elementType
             is Type.ArrayList -> targetType.elementType
             Type.String -> Type.Char
+            Type.Any -> Type.Any
             else -> {
                 reportError(expression.target, "cannot index into type $targetType", null)
                 Type.Error

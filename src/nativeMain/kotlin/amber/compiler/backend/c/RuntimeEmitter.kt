@@ -56,6 +56,15 @@ class RuntimeEmitter(
         writer.dedent()
         writer.writeLine("} __amber_box_bool_t;")
         writer.writeLine()
+        
+        // Boxed String
+        writer.writeLine("typedef struct {")
+        writer.indent()
+        writer.writeLine("__amber_header_t header;")
+        writer.writeLine("char* value;")
+        writer.dedent()
+        writer.writeLine("} __amber_box_string_t;")
+        writer.writeLine()
 
         // List/Array type
         writer.writeLine("typedef struct {")
@@ -136,6 +145,22 @@ class RuntimeEmitter(
             static inline int __amber_rt_unbox_bool(void* p) {
                 if (!p) return 0;
                 return ((__amber_box_bool_t*)p)->value;
+            }
+
+            static inline void* __amber_rt_box_string(char* s) {
+                __amber_box_string_t* p = (__amber_box_string_t*)__amber_rt_alloc(sizeof(__amber_box_string_t));
+                p->header.type = &__amber_type_string;
+                p->value = s;
+                return p;
+            }
+
+            static inline char* __amber_rt_unbox_string(void* p) {
+                if (!p) return "";
+                __amber_header_t* h = (__amber_header_t*)p;
+                if (h->type == &__amber_type_string) {
+                    return ((__amber_box_string_t*)p)->value;
+                }
+                return (char*)p;
             }
             
             static inline int __amber_rt_is_error(struct AMBER_RESULT res) {

@@ -36,7 +36,7 @@ class StatementEmitter(
             }
             is VariableDeclaration -> {
                 val symbol = resolvedSymbols[statement.name]
-                val type = expressionTypes[statement.initializer] ?: symbol?.type ?: Type.Any
+                val type = symbol?.type ?: expressionTypes[statement.initializer] ?: Type.Any
                 val cType = typeMapper.map(type)
                 val name = symbol?.let { symbolEmitter.mangle(it.name, it.namespace) } ?: symbolEmitter.mangle(statement.name.name)
                 
@@ -46,14 +46,14 @@ class StatementEmitter(
                     if (isTopLevel) {
                         if (statement.initializer != null) {
                             writer.write("$name = ")
-                            expressionEmitter.emit(statement.initializer)
+                            expressionEmitter.emit(statement.initializer, symbol?.type)
                             writer.writeLine(";")
                         }
                     } else {
                         writer.write("$cType $name")
                         if (statement.initializer != null) {
                             writer.write(" = ")
-                            expressionEmitter.emit(statement.initializer)
+                            expressionEmitter.emit(statement.initializer, symbol?.type)
                         }
                         writer.writeLine(";")
                     }
@@ -142,13 +142,7 @@ class StatementEmitter(
                     } else {
                         writer.write("return __amber_rt_result_success(")
                         if (statement.value != null) {
-                            if (exprType == Type.Number) {
-                                writer.write("__amber_rt_box_double(")
-                                expressionEmitter.emit(statement.value)
-                                writer.write(")")
-                            } else {
-                                expressionEmitter.emit(statement.value)
-                            }
+                            expressionEmitter.emit(statement.value, Type.Any)
                         } else {
                             writer.write("NULL")
                         }
@@ -158,7 +152,7 @@ class StatementEmitter(
                     writer.write("return")
                     if (statement.value != null && currentReturnType != Type.Unit) {
                         writer.write(" ")
-                        expressionEmitter.emit(statement.value)
+                        expressionEmitter.emit(statement.value, currentReturnType)
                     }
                     writer.writeLine(";")
                 }

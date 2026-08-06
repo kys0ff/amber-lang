@@ -15,6 +15,7 @@ import amber.runtime.RuntimeProvider
 class CBackend(
     private val expressionTypes: Map<Expression, Type>,
     private val resolvedSymbols: Map<Expression, Symbol>,
+    private val resolvedIsTypes: Map<amber.compiler.ast.IsExpression, Type> = emptyMap(),
     private val runtimeProvider: RuntimeProvider,
     private val gc: GarbageCollector = BoehmGC,
     private val config: CompilerConfig? = null
@@ -26,6 +27,10 @@ class CBackend(
         resolvedSymbols: Map<Expression, Symbol>
     ): String {
         val writer = CodeWriter()
+        
+        // Use provided maps or fall back to class members
+        val usedExpressionTypes = expressionTypes.ifEmpty { this.expressionTypes }
+        val usedResolvedSymbols = resolvedSymbols.ifEmpty { this.resolvedSymbols }
 
         if (config != null) {
             writer.writeLine("/*")
@@ -40,8 +45,8 @@ class CBackend(
         val symbolEmitter = SymbolEmitter()
         val typeMapper = CTypeMapper()
         val runtimeEmitter = RuntimeEmitter(writer, gc)
-        val expressionEmitter = ExpressionEmitter(writer, expressionTypes, resolvedSymbols, symbolEmitter, runtimeProvider)
-        val statementEmitter = StatementEmitter(writer, expressionEmitter, symbolEmitter, typeMapper, expressionTypes, resolvedSymbols)
+        val expressionEmitter = ExpressionEmitter(writer, usedExpressionTypes, usedResolvedSymbols, resolvedIsTypes, symbolEmitter, runtimeProvider)
+        val statementEmitter = StatementEmitter(writer, expressionEmitter, symbolEmitter, typeMapper, usedExpressionTypes, usedResolvedSymbols)
 
         runtimeEmitter.emitHeaders()
         runtimeEmitter.emitTypedefs()

@@ -6,7 +6,7 @@ import amber.compiler.ast.CallExpression
 class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, message: String, suggestion: String?) -> Unit) {
 
     fun isCompatible(target: Type, value: Type): Boolean {
-        if (target == Type.Any || value == Type.Error || value == Type.Nothing) return true
+        if (target == Type.Any || value == Type.Any || value == Type.Error || value == Type.Nothing) return true
         if (target == value) return true
 
         if (target is Type.Unsafe && value == target.innerType) return true

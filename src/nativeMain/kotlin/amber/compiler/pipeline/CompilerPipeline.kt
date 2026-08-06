@@ -86,9 +86,12 @@ class CompilerPipeline(val config: CompilerConfig) {
         logger.debug("  → code generation")
         val allExpressionTypes = expressionTypes.toMutableMap()
         val allResolvedSymbols = resolvedSymbols.toMutableMap()
+        val allResolvedIsTypes = typeChecker.resolvedIsTypes.toMutableMap()
+        
         typeChecker.importedModuleTypeCheckers.values.forEach {
             allExpressionTypes.putAll(it.expressionTypes)
             allResolvedSymbols.putAll(it.resolvedSymbols)
+            allResolvedIsTypes.putAll(it.resolvedIsTypes)
         }
 
         val gc = when (config.gc) {
@@ -100,6 +103,7 @@ class CompilerPipeline(val config: CompilerConfig) {
             val codeGenerator = CBackend(
                 allExpressionTypes,
                 allResolvedSymbols,
+                allResolvedIsTypes,
                 runtimeProvider,
                 gc = gc,
                 config = config

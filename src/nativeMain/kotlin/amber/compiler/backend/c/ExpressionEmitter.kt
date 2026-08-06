@@ -25,12 +25,63 @@ class ExpressionEmitter(
     private val writer: CodeWriter,
     private val expressionTypes: Map<Expression, Type>,
     private val resolvedSymbols: Map<Expression, Symbol>,
+    private val resolvedIsTypes: Map<IsExpression, Type> = emptyMap(),
     private val symbolEmitter: SymbolEmitter,
     private val runtimeProvider: RuntimeProvider
 ) {
     private val typeMapper = CTypeMapper()
 
-    fun emit(expression: Expression) {
+    fun emit(expression: Expression, expectedType: Type? = null) {
+        val actualType = expressionTypes[expression]
+        
+        // Boxing: primitive -> any
+        if (expectedType == Type.Any && actualType != null && actualType != Type.Any && actualType != Type.Error && actualType != Type.Nothing) {
+            if (actualType == Type.Number) {
+                writer.write("__amber_rt_box_double(")
+                emitRaw(expression)
+                writer.write(")")
+                return
+            }
+            if (actualType == Type.Boolean) {
+                writer.write("__amber_rt_box_bool(")
+                emitRaw(expression)
+                writer.write(")")
+                return
+            }
+            if (actualType == Type.String) {
+                writer.write("__amber_rt_box_string(")
+                emitRaw(expression)
+                writer.write(")")
+                return
+            }
+        }
+        
+        // Unboxing: any -> primitive
+        if (actualType == Type.Any && expectedType != null && expectedType != Type.Any && expectedType != Type.Error && expectedType != Type.Nothing) {
+            if (expectedType == Type.Number) {
+                writer.write("__amber_rt_unbox_double(")
+                emitRaw(expression)
+                writer.write(")")
+                return
+            }
+            if (expectedType == Type.Boolean) {
+                writer.write("__amber_rt_unbox_bool(")
+                emitRaw(expression)
+                writer.write(")")
+                return
+            }
+            if (expectedType == Type.String) {
+                writer.write("__amber_rt_unbox_string(")
+                emitRaw(expression)
+                writer.write(")")
+                return
+            }
+        }
+        
+        emitRaw(expression)
+    }
+
+    private fun emitRaw(expression: Expression) {
         when (expression) {
             is LiteralExpression -> {
                 when (val value = expression.value) {
@@ -51,7 +102,6 @@ class ExpressionEmitter(
             }
             is BinaryExpression -> {
                 val leftType = expressionTypes[expression.left]
-                val rightType = expressionTypes[expression.right]
                 if (expression.operator == "+" && leftType == Type.String) {
                     writer.write(symbolEmitter.runtimeHelper("str_concat"))
                     writer.write("(")
@@ -67,17 +117,7 @@ class ExpressionEmitter(
                     writer.write("; ")
                     writer.write(symbolEmitter.runtimeHelper("list_push"))
                     writer.write("(_l, ")
-                    if (elementType == Type.Any && rightType == Type.Number) {
-                        writer.write("__amber_rt_box_double(")
-                        emit(expression.right)
-                        writer.write(")")
-                    } else if (elementType == Type.Any && rightType == Type.Boolean) {
-                        writer.write("__amber_rt_box_bool(")
-                        emit(expression.right)
-                        writer.write(")")
-                    } else {
-                        emit(expression.right)
-                    }
+                    emit(expression.right, elementType)
                     writer.write("); _l; })")
                 } else if ((expression.operator == "==" || expression.operator == "!=") && leftType == Type.String) {
                     if (expression.operator == "!=") writer.write("!")
@@ -103,23 +143,12 @@ class ExpressionEmitter(
                 expression.arguments.forEachIndexed { index, arg ->
                     val paramType = functionType?.parameterTypes?.getOrNull(index) ?: Type.Any
                     val isMutated = functionType?.isParameterMutated?.getOrNull(index) ?: false
-                    val argType = expressionTypes[arg]
                     
                     if (isMutated && isPrimitive(paramType)) {
                         writer.write("&")
                     }
                     
-                    if (paramType == Type.Any && argType == Type.Number) {
-                        writer.write("__amber_rt_box_double(")
-                        emit(arg)
-                        writer.write(")")
-                    } else if (paramType == Type.Any && argType == Type.Boolean) {
-                        writer.write("__amber_rt_box_bool(")
-                        emit(arg)
-                        writer.write(")")
-                    } else {
-                        emit(arg)
-                    }
+                    emit(arg, paramType)
                     
                     if (index < expression.arguments.size - 1) {
                         writer.write(", ")
@@ -137,7 +166,7 @@ class ExpressionEmitter(
                 writer.write(expression.elements.size.toString())
                 expression.elements.forEach { arg ->
                     writer.write(", ")
-                    emit(arg)
+                    emit(arg, Type.Any)
                 }
                 writer.write(")")
             }
@@ -150,7 +179,7 @@ class ExpressionEmitter(
                     writer.write(name)
                 }
                 writer.write(" = ")
-                emit(expression.value)
+                emit(expression.value, symbol?.type)
             }
             is MemberAccessExpression -> {
                 val symbol = resolvedSymbols[expression]
@@ -166,21 +195,33 @@ class ExpressionEmitter(
                 emitStringTemplate(expression.segments)
             }
             is IsExpression -> {
-                val descriptor = when (expression.typeName) {
-                    "num" -> "&__amber_type_double"
-                    "string" -> "&__amber_type_string"
-                    "bool" -> "&__amber_type_bool"
+                val targetType = resolvedIsTypes[expression]
+                val descriptor = when (targetType) {
+                    is Type.Number -> "&__amber_type_double"
+                    is Type.String -> "&__amber_type_string"
+                    is Type.Boolean -> "&__amber_type_bool"
+                    is Type.List, is Type.ArrayList -> "&__amber_type_list"
                     else -> "NULL"
                 }
                 writer.write("__amber_rt_is_type(")
-                emit(expression.left)
+                emit(expression.left, Type.Any)
                 writer.write(", $descriptor)")
             }
             is IndexAccessExpression -> {
-                emit(expression.target)
-                writer.write("[")
-                emit(expression.index)
-                writer.write("]")
+                val targetType = expressionTypes[expression.target]
+                if (targetType is Type.List || targetType is Type.ArrayList || targetType == Type.Any) {
+                    writer.write(symbolEmitter.runtimeHelper("list_get"))
+                    writer.write("(")
+                    emit(expression.target)
+                    writer.write(", ")
+                    emit(expression.index)
+                    writer.write(")")
+                } else {
+                    emit(expression.target)
+                    writer.write("[")
+                    emit(expression.index)
+                    writer.write("]")
+                }
             }
             is PanicExpression -> {
                 if (expression.isFatal) {

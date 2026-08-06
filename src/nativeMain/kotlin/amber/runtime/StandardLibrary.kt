@@ -204,6 +204,9 @@ object StandardLibrary {
                         if (h->type == &__amber_type_bool) {
                             return __amber_rt_unbox_bool(val) ? "true" : "false";
                         }
+                        if (h->type == &__amber_type_string) {
+                            return __amber_rt_unbox_string(val);
+                        }
                         if (h->type == &__amber_type_list) {
                             __amber_list_t* l = (__amber_list_t*)val;
                             char* res = "[";

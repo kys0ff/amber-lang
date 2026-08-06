@@ -406,8 +406,8 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
                 val precedence = getPrecedence("is")
                 if (precedence < minPrecedence) break
                 consume()
-                val typeNameToken = expectIdentifier()
-                left = IsExpression(left, typeNameToken.value, left.line, left.column)
+                val typeName = parseType()
+                left = IsExpression(left, typeName, left.line, left.column)
                 continue
             }
 
