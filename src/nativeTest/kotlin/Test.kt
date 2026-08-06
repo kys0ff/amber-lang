@@ -1,7 +1,8 @@
-package off.kys.amber_lang
+package amber
 
-import off.kys.amber_lang.transpiler.Severity
-import off.kys.amber_lang.transpiler.Transpiler
+import amber.compiler.CompilerConfig
+import amber.compiler.Transpiler
+import amber.compiler.diagnostic.DiagnosticSeverity
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -22,7 +23,7 @@ class Test {
 
         val result = transpile(source)
 
-        assertTrue(result.errors.isEmpty(), "expected no transpilation errors, got: ${result.errors}")
+        assertTrue(result.diagnostics.none { it.severity == DiagnosticSeverity.ERROR }, "expected no transpilation errors, got: ${result.diagnostics}")
     }
 
     @Test
@@ -34,7 +35,7 @@ class Test {
 
         val result = transpile(source)
 
-        assertTrue(result.errors.isNotEmpty(), "expected type error for string increment")
+        assertTrue(result.diagnostics.any { it.severity == DiagnosticSeverity.ERROR }, "expected type error for string increment")
     }
 
     @Test
@@ -46,7 +47,7 @@ class Test {
 
         val result = transpile(source)
 
-        assertTrue(result.errors.isNotEmpty(), "expected syntax error for invalid increment target")
+        assertTrue(result.diagnostics.any { it.severity == DiagnosticSeverity.ERROR }, "expected syntax error for invalid increment target")
     }
 
     @Test
@@ -61,7 +62,7 @@ class Test {
 
         val result = transpile(source)
 
-        assertTrue(result.errors.any { it.message.contains("argument 1 type mismatch") }, "expected argument mismatch after first call infers parameter type")
+        assertTrue(result.diagnostics.any { it.message.contains("argument 1 type mismatch") }, "expected argument mismatch after first call infers parameter type")
     }
 
     @Test
@@ -76,7 +77,7 @@ class Test {
 
         val result = transpile(source)
 
-        assertTrue(result.errors.isEmpty(), "expected explicit any parameter to stay flexible, got: ${result.errors}")
+        assertTrue(result.diagnostics.none { it.severity == DiagnosticSeverity.ERROR }, "expected explicit any parameter to stay flexible, got: ${result.diagnostics}")
     }
 
     @Test
@@ -87,7 +88,7 @@ class Test {
 
         val result = transpile(source)
 
-        assertTrue(result.errors.isEmpty(), "expected no errors for char literal, got: ${result.errors}")
+        assertTrue(result.diagnostics.none { it.severity == DiagnosticSeverity.ERROR }, "expected no errors for char literal, got: ${result.diagnostics}")
     }
 
     @Test
@@ -98,7 +99,7 @@ class Test {
 
         val result = transpile(source)
 
-        assertTrue(result.errors.isEmpty(), "expected no errors for char type annotation, got: ${result.errors}")
+        assertTrue(result.diagnostics.none { it.severity == DiagnosticSeverity.ERROR }, "expected no errors for char type annotation, got: ${result.diagnostics}")
     }
 
     @Test
@@ -109,7 +110,7 @@ class Test {
 
         val result = transpile(source)
 
-        assertTrue(result.errors.isNotEmpty(), "expected type error when assigning char to string")
+        assertTrue(result.diagnostics.any { it.severity == DiagnosticSeverity.ERROR }, "expected type error when assigning char to string")
     }
 
     @Test
@@ -130,10 +131,8 @@ class Test {
 
         val result = transpile(source)
 
-        val errors = result.errors.filter { it.severity == Severity.ERROR }
+        val errors = result.diagnostics.filter { it.severity == DiagnosticSeverity.ERROR }
         assertTrue(errors.isEmpty(), "expected no transpilation errors for to_string, got: $errors")
-        // assertTrue(result.code!!.contains("__am_n=\"num:42.0\""), "bash should contain __am_n=\"num:42.0\"")
-        // assertTrue(result.code!!.contains("__am_s=\"str:\${__am_n#*:}\""), "bash should contain __am_s=\"str:\${__am_n#*:}\"")
     }
 
     @Test
@@ -147,15 +146,16 @@ class Test {
 
         val result = transpile(source)
 
-        val errors = result.errors.filter { it.severity == Severity.ERROR }
+        val errors = result.diagnostics.filter { it.severity == DiagnosticSeverity.ERROR }
         assertTrue(errors.isEmpty(), "expected no transpilation errors for list printing, got: $errors")
         assertTrue(result.code!!.contains("__amber_rt_println"), "code should contain __amber_rt_println function")
     }
 
     private fun transpile(source: String) = Transpiler(
-        sourceCode = source,
-        currentFilePath = "/tmp/test.amb",
-        projectRoot = "/tmp",
-        executableDir = "/home/kys0adam/IdeaProjects/amber-lang"
-    ).transpile()
+        CompilerConfig(
+            projectRoot = "/tmp",
+            entryFile = "/tmp/test.amb",
+            executableDir = "/home/kys0adam/IdeaProjects/amber-lang"
+        )
+    ).transpile(source, "/tmp/test.amb")
 }

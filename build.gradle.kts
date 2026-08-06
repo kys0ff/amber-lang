@@ -5,7 +5,7 @@ plugins {
     alias(libs.plugins.kotlinxSerialization)
 }
 
-group = "off.kys.amber_lang"
+group = "amber"
 version = "1.0.0"
 
 repositories {
@@ -28,7 +28,7 @@ kotlin {
         }
         binaries {
             executable {
-                entryPoint = "off.kys.amber_lang.main"
+                entryPoint = "amber.cli.main"
                 baseName = "amber"
                 linkerOpts("-L${project.projectDir}/libs", "-lgc", "-ltcc")
                 linkerOpts("-ldl", "-lm", "-lpthread")
