@@ -4,6 +4,7 @@ import amber.compiler.BackendType
 import amber.compiler.CompilerConfig
 import amber.compiler.GCType
 import amber.compiler.OptimizationLevel
+import amber.compiler.compilerConfig
 import amber.util.Ansi
 import amber.util.getExecutableDirectory
 import amber.util.normalizePath
@@ -81,22 +82,22 @@ class CliParser {
         val absoluteTarget = normalizePath(target ?: ".")
         // The project file parsing logic will be in the runner or a ProjectLoader
         
-        return CompilerConfig(
-            projectRoot = ".", // Will be updated by runner
-            entryFile = absoluteTarget,
-            outputName = output,
-            emitC = emitC,
-            optimizationLevel = OptimizationLevel.O1,
-            backend = BackendType.TINY_CC,
-            gc = GCType.BOEHM,
-            useColor = "--no-color" !in flags,
-            verbose = "--verbose" in flags || "-V" in flags,
-            benchmark = "--benchmark" in flags || "-b" in flags,
-            quiet = "--quiet" in flags || "-q" in flags,
-            checkOnly = "--check" in flags || "-c" in flags,
-            runAfterBuild = "--no-run" !in flags,
+        return compilerConfig {
+            projectRoot = "." // Will be updated by runner
+            entryFile = absoluteTarget
+            outputName = output
+            this.emitC = emitC
+            optimizationLevel = OptimizationLevel.O1
+            backend = BackendType.TINY_CC
+            gc = GCType.BOEHM
+            useColor = "--no-color" !in flags
+            verbose = "--verbose" in flags || "-V" in flags
+            benchmark = "--benchmark" in flags || "-b" in flags
+            quiet = "--quiet" in flags || "-q" in flags
+            checkOnly = "--check" in flags || "-c" in flags
+            runAfterBuild = "--no-run" !in flags
             executableDir = getExecutableDirectory()
-        )
+        }
     }
 
     private fun printError(message: String) {

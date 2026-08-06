@@ -21,6 +21,10 @@ import kotlin.time.TimeSource
 
 class CompilerRunner(private val config: CompilerConfig) {
 
+    init {
+        if (!config.useColor) Ansi.forceDisable()
+    }
+
     private data class Context(
         val config: CompilerConfig,
         val scriptPath: String,
@@ -119,9 +123,11 @@ class CompilerRunner(private val config: CompilerConfig) {
             "runtime"
         ) else "/home/kys0adam/IdeaProjects/amber-lang/runtime"
 
-        val tccCompiler = TccCompiler(runtimeRoot)
+        val nativeBackend = when (finalConfig.backend) {
+            amber.compiler.BackendType.TINY_CC -> TccCompiler(runtimeRoot)
+        }
         val nativeCompileStartTime = timeSource?.markNow()
-        val compileResult = tccCompiler.compile(code, exePath, finalConfig)
+        val compileResult = nativeBackend.compile(code, exePath, finalConfig)
         val nativeCompileDuration = nativeCompileStartTime?.elapsedNow()
 
         when (compileResult) {

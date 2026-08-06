@@ -1,6 +1,6 @@
 package amber
 
-import amber.compiler.CompilerConfig
+import amber.compiler.compilerConfig
 import amber.compiler.Transpiler
 import amber.compiler.lexer.Lexer
 import amber.compiler.parser.Parser
@@ -38,12 +38,14 @@ class UnusedWarningTest {
         val (program, _) = parser.parseProgram()
         
         val typeChecker = TypeChecker(
-            projectRoot = "/tmp",
+            compilerConfig {
+                projectRoot = "/tmp"
+                isProject = false
+                executableDir = "/tmp"
+            },
             currentFilePath = "/tmp/imported.amb",
             runtimeProvider = CRuntimeProvider(),
-            isMainFile = false, // This is the key
-            isProject = false,
-            executableDir = "/tmp"
+            isMainFile = false // This is the key
         )
         typeChecker.check(program)
         
@@ -64,12 +66,14 @@ class UnusedWarningTest {
         val (program, _) = parser.parseProgram()
         
         val typeChecker = TypeChecker(
-            projectRoot = "/tmp",
+            compilerConfig {
+                projectRoot = "/tmp"
+                isProject = false
+                executableDir = "/tmp"
+            },
             currentFilePath = "/tmp/main.amb",
             runtimeProvider = CRuntimeProvider(),
-            isMainFile = true, // Main file
-            isProject = false,
-            executableDir = "/tmp"
+            isMainFile = true // Main file
         )
         typeChecker.check(program)
         
@@ -200,10 +204,10 @@ class UnusedWarningTest {
     }
 
     private fun transpile(source: String) = Transpiler(
-        CompilerConfig(
-            projectRoot = "/tmp",
-            entryFile = "/tmp/test.amb",
+        compilerConfig {
+            projectRoot = "/tmp"
+            entryFile = "/tmp/test.amb"
             executableDir = "/home/kys0adam/IdeaProjects/amber-lang"
-        )
+        }
     ).transpile(source, "/tmp/test.amb")
 }

@@ -1,5 +1,6 @@
 package amber.compiler.type
 
+import amber.compiler.CompilerConfig
 import amber.compiler.ast.ArrayLiteralExpression
 import amber.compiler.ast.AssignmentExpression
 import amber.compiler.ast.AstNode
@@ -36,12 +37,10 @@ import amber.compiler.symbol.SymbolTable
 import amber.runtime.RuntimeProvider
 
 class TypeChecker(
-    private val projectRoot: String,
+    val config: CompilerConfig,
     private val currentFilePath: String,
     private val runtimeProvider: RuntimeProvider,
     private val isMainFile: Boolean = true,
-    private val isProject: Boolean = false,
-    private val executableDir: String = ".",
     private val namespace: String? = null
 ) {
     private var currentScope: SymbolTable
@@ -53,7 +52,7 @@ class TypeChecker(
 
     private val typeResolver = TypeResolver(::reportError)
     private val typeCompatibilityChecker = TypeCompatibilityChecker(::reportError)
-    private val importResolver = ImportResolver(projectRoot, isProject, executableDir)
+    private val importResolver = ImportResolver(config)
 
     val importedModulePrograms = mutableMapOf<String, Program>()
     val importedModuleTypeCheckers = mutableMapOf<String, TypeChecker>()
@@ -852,12 +851,10 @@ class TypeChecker(
             val importedNamespace = calculateNamespace(importStmt.path)
             
             val importedTypeChecker = TypeChecker(
-                projectRoot,
+                config,
                 importedFilePath,
                 runtimeProvider,
                 isMainFile = false,
-                isProject = isProject,
-                executableDir = executableDir,
                 namespace = importedNamespace
             )
 

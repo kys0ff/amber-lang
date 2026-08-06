@@ -1,6 +1,6 @@
 package amber
 
-import amber.compiler.CompilerConfig
+import amber.compiler.compilerConfig
 import amber.compiler.Transpiler
 import amber.compiler.diagnostic.DiagnosticSeverity
 import kotlin.test.Test
@@ -102,10 +102,10 @@ class IntrinsicTest {
     }
 
     private fun transpile(source: String, filePath: String) = Transpiler(
-        CompilerConfig(
-            projectRoot = "/tmp",
-            entryFile = filePath,
+        compilerConfig {
+            projectRoot = "/tmp"
+            entryFile = filePath
             executableDir = "/home/kys0adam/IdeaProjects/amber-lang"
-        )
+        }
     ).transpile(source, filePath)
 }

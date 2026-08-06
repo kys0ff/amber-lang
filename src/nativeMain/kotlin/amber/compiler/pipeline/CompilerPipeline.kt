@@ -24,9 +24,13 @@ class CompilerPipeline(val config: CompilerConfig) {
      * Executes the compiler pipeline on the given source.
      */
     fun execute(source: String, filePath: String): CompilationResult {
+        if (config.verbose) {
+            println("→ pipeline start: $filePath")
+        }
         val runtimeProvider = CRuntimeProvider()
 
         // 1. Lexing & Parsing
+        if (config.verbose) println("  → lexing & parsing")
         val lexer = Lexer(source)
         val tokens = lexer.tokenize()
         val parser = Parser(tokens, filePath)
@@ -37,13 +41,12 @@ class CompilerPipeline(val config: CompilerConfig) {
         }
 
         // 2. Type Checking
+        if (config.verbose) println("  → type checking")
         val typeChecker = TypeChecker(
-            config.projectRoot,
+            config,
             filePath,
             runtimeProvider,
-            isMainFile = true,
-            isProject = config.isProject,
-            executableDir = config.executableDir
+            isMainFile = true
         )
         val (expressionTypes, resolvedSymbols, typeErrors) = typeChecker.check(program)
 
@@ -52,8 +55,13 @@ class CompilerPipeline(val config: CompilerConfig) {
         }
 
         // 3. Optimization (Tree Shaking)
-        val shaker = TreeShaker(typeChecker.importedModulePrograms)
-        shaker.shake(program)
+        if (config.optimizationLevel != amber.compiler.OptimizationLevel.O0) {
+            if (config.verbose) println("  → tree shaking")
+            val shaker = TreeShaker(typeChecker.importedModulePrograms)
+            shaker.shake(program)
+        } else {
+            if (config.verbose) println("  → tree shaking skipped (O0)")
+        }
 
         typeChecker.importedModuleTypeCheckers.values.forEach { it.reportUnusedExports() }
 
@@ -63,6 +71,7 @@ class CompilerPipeline(val config: CompilerConfig) {
         typeChecker.importedModuleTypeCheckers.values.forEach { allDiagnostics.addAll(it.errors) }
 
         // 4. Code Generation
+        if (config.verbose) println("  → code generation")
         val allExpressionTypes = expressionTypes.toMutableMap()
         val allResolvedSymbols = resolvedSymbols.toMutableMap()
         typeChecker.importedModuleTypeCheckers.values.forEach {
@@ -80,7 +89,8 @@ class CompilerPipeline(val config: CompilerConfig) {
                 allExpressionTypes,
                 allResolvedSymbols,
                 runtimeProvider,
-                gc = gc
+                gc = gc,
+                config = config
             )
             CompilationResult(codeGenerator.generate(program), allDiagnostics)
         } catch (e: Exception) {

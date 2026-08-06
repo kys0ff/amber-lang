@@ -1,6 +1,6 @@
 package amber
 
-import amber.compiler.CompilerConfig
+import amber.compiler.compilerConfig
 import amber.compiler.Transpiler
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -49,10 +49,10 @@ class ReproductionTest {
     }
 
     private fun transpile(source: String) = Transpiler(
-        CompilerConfig(
-            projectRoot = "/tmp",
-            entryFile = "/tmp/test.amb",
+        compilerConfig {
+            projectRoot = "/tmp"
+            entryFile = "/tmp/test.amb"
             executableDir = "/home/kys0adam/IdeaProjects/amber-lang"
-        )
+        }
     ).transpile(source, "/tmp/test.amb")
 }

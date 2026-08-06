@@ -1,6 +1,6 @@
 package amber
 
-import amber.compiler.CompilerConfig
+import amber.compiler.compilerConfig
 import amber.compiler.Transpiler
 import amber.compiler.diagnostic.DiagnosticSeverity
 import kotlin.test.Test
@@ -152,10 +152,10 @@ class Test {
     }
 
     private fun transpile(source: String) = Transpiler(
-        CompilerConfig(
-            projectRoot = "/tmp",
-            entryFile = "/tmp/test.amb",
+        compilerConfig {
+            projectRoot = "/tmp"
+            entryFile = "/tmp/test.amb"
             executableDir = "/home/kys0adam/IdeaProjects/amber-lang"
-        )
+        }
     ).transpile(source, "/tmp/test.amb")
 }

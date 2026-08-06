@@ -1,5 +1,6 @@
 package amber.compiler.semantic
 
+import amber.compiler.CompilerConfig
 import amber.compiler.ast.Program
 import amber.compiler.diagnostic.Diagnostic
 import amber.compiler.diagnostic.GenericDiagnostic
@@ -12,9 +13,7 @@ import amber.util.normalizePath
 import amber.util.readFile
 
 class ImportResolver(
-    private val projectRoot: String,
-    private val isProject: Boolean,
-    private val executableDir: String
+    private val config: CompilerConfig
 ) {
     private val parsedFilesCache = mutableMapOf<String, Program>()
     private val parsingStack = mutableSetOf<String>()
@@ -64,7 +63,7 @@ class ImportResolver(
         val resolvedPath = when {
             importPath.startsWith("core:") -> {
                 val subPath = importPath.removePrefix("core:").replace(":", "/")
-                val primaryPath = joinPaths(executableDir, "lib/std", subPath)
+                val primaryPath = joinPaths(config.executableDir, "lib/std", subPath)
                 if (fileExists(primaryPath) || fileExists("$primaryPath.amb")) {
                     primaryPath
                 } else {
@@ -72,23 +71,23 @@ class ImportResolver(
                 }
             }
             importPath.startsWith("local:") -> {
-                if (!isProject) {
+                if (!config.isProject) {
                     throw ImportResolutionException("local imports are only allowed in project mode")
                 }
                 val subPath = importPath.removePrefix("local:").replace(":", "/")
-                joinPaths(projectRoot, subPath)
+                joinPaths(config.projectRoot, subPath)
             }
             importPath.startsWith("pkg:") -> {
-                if (!isProject) {
+                if (!config.isProject) {
                     throw ImportResolutionException("package imports are only allowed in project mode")
                 }
                 val subPath = importPath.removePrefix("pkg:").replace(":", "/")
-                joinPaths(projectRoot, "packages", subPath)
+                joinPaths(config.projectRoot, "packages", subPath)
             }
             else -> {
-                val currentDirectory = getPathParent(currentFilePath) ?: projectRoot
+                val currentDirectory = getPathParent(currentFilePath) ?: config.projectRoot
                 if (importPath.startsWith("/")) {
-                    joinPaths(projectRoot, importPath.removePrefix("/"))
+                    joinPaths(config.projectRoot, importPath.removePrefix("/"))
                 } else {
                     joinPaths(currentDirectory, importPath)
                 }
