@@ -152,23 +152,26 @@ class ExpressionEmitter(
                 val targetType = expressionTypes[expression.target]
                 val innerType = if (targetType is Type.Unsafe) targetType.innerType else Type.Any
                 val cInnerType = typeMapper.map(innerType)
+                
+                val resVar = symbolEmitter.nextTemp()
+                val finalResVar = symbolEmitter.nextTemp()
 
                 writer.write("({ ")
-                writer.write("struct AMBER_RESULT __res = ")
+                writer.write("struct AMBER_RESULT $resVar = ")
                 emit(expression.target)
                 writer.write("; ")
-                writer.write("$cInnerType __final_res; ")
-                writer.write("if (__amber_rt_is_error(__res)) { ")
+                writer.write("$cInnerType $finalResVar; ")
+                writer.write("if (__amber_rt_is_error($resVar)) { ")
                 
                 if (expression.errorVarName != "_" && expression.errorVarName.isNotEmpty()) {
-                    writer.write("const char* ${symbolEmitter.mangle(expression.errorVarName)} = __res.error_message; ")
+                    writer.write("const char* ${symbolEmitter.mangle(expression.errorVarName)} = $resVar.error_message; ")
                 }
                 
                 expression.body.statements.forEachIndexed { index, stmt ->
                     val isLast = index == expression.body.statements.size - 1
                     if (isLast) {
                         if (stmt is ExpressionStatement) {
-                            writer.write("__final_res = ")
+                            writer.write("$finalResVar = ")
                             emit(stmt.expression)
                             writer.write("; ")
                         } else if (stmt is ReturnStatement && stmt.value != null) {
@@ -178,7 +181,7 @@ class ExpressionEmitter(
                                 emit(stmt.value)
                                 writer.write("; ")
                             } else {
-                                writer.write("__final_res = ")
+                                writer.write("$finalResVar = ")
                                 emit(stmt.value)
                                 writer.write("; ")
                             }
@@ -192,7 +195,7 @@ class ExpressionEmitter(
                                 emit(stmt.initializer)
                             }
                             writer.write("; ")
-                            writer.write("__final_res = $vName; ")
+                            writer.write("$finalResVar = $vName; ")
                         } else {
                             writer.write("/* unsupported last stmt in catch */ ")
                         }
@@ -215,15 +218,15 @@ class ExpressionEmitter(
                 }
                 
                 writer.write("} else { ")
-                writer.write("__final_res = ")
+                writer.write("$finalResVar = ")
                 if (innerType == Type.Number) {
-                    writer.write("__amber_rt_unbox_double(__amber_rt_unwrap(__res))")
+                    writer.write("__amber_rt_unbox_double(__amber_rt_unwrap($resVar))")
                 } else {
-                    writer.write("(${cInnerType})__amber_rt_unwrap(__res)")
+                    writer.write("(${cInnerType})__amber_rt_unwrap($resVar)")
                 }
                 writer.write("; ")
                 writer.write("} ")
-                writer.write("__final_res; ")
+                writer.write("$finalResVar; ")
                 writer.write("})")
             }
             else -> writer.write("/* unsupported expression: ${expression::class.simpleName} */")

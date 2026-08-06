@@ -1,8 +1,5 @@
 package amber.util
 
-import kotlinx.cinterop.ExperimentalForeignApi
-import platform.posix.getenv
-
 enum class LogLevel {
     DEBUG,
     INFO,
@@ -19,18 +16,23 @@ interface Logger {
     fun error(message: String) = log(LogLevel.ERROR, message)
 }
 
-class ConsoleLogger(private val minLevel: LogLevel = LogLevel.INFO) : Logger {
-    @OptIn(ExperimentalForeignApi::class)
-    private val useColor = getenv("NO_COLOR") == null
+class ConsoleLogger(
+    private val minLevel: LogLevel = LogLevel.INFO,
+    useColor: Boolean = true
+) : Logger {
+
+    init {
+        if (!useColor) Ansi.forceDisable()
+    }
 
     override fun log(level: LogLevel, message: String) {
         if (level.ordinal < minLevel.ordinal) return
 
         val prefix = when (level) {
-            LogLevel.DEBUG -> colorize("[DEBUG]", DIM)
-            LogLevel.INFO -> colorize("[INFO]", CYAN)
-            LogLevel.WARN -> colorize("[WARN]", YELLOW)
-            LogLevel.ERROR -> colorize("[ERROR]", RED)
+            LogLevel.DEBUG -> Ansi.dim("[DEBUG]")
+            LogLevel.INFO -> Ansi.cyan("[INFO]")
+            LogLevel.WARN -> Ansi.yellow("[WARN]")
+            LogLevel.ERROR -> Ansi.red("[ERROR]")
             LogLevel.NONE -> ""
         }
         
@@ -39,17 +41,6 @@ class ConsoleLogger(private val minLevel: LogLevel = LogLevel.INFO) : Logger {
         } else {
             println(message)
         }
-    }
-
-    private fun colorize(text: String, code: String): String =
-        if (useColor) "$code$text$RESET" else text
-
-    private companion object {
-        const val RESET = "\u001B[0m"
-        const val RED = "\u001B[31m"
-        const val YELLOW = "\u001B[33m"
-        const val CYAN = "\u001B[36m"
-        const val DIM = "\u001B[2m"
     }
 }
 

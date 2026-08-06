@@ -131,7 +131,7 @@ class StatementEmitter(
                     val exprType = statement.value?.let { expressionTypes[it] }
                     if (exprType is Type.Unsafe || exprType == Type.Nothing) {
                         writer.write("return ")
-                        statement.value.let { expressionEmitter.emit(it) } ?: writer.write("__amber_rt_result_error(\"null return\")")
+                        statement.value.let { expressionEmitter.emit(it) }
                         writer.writeLine(";")
                     } else {
                         writer.write("return __amber_rt_result_success(")

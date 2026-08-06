@@ -1,5 +1,6 @@
 package amber.compiler.diagnostic
 
+import amber.util.Ansi
 import amber.util.makeRelative
 import amber.util.readFile
 
@@ -8,15 +9,19 @@ import amber.util.readFile
  */
 class DiagnosticFormatter(
     private val projectRoot: String,
-    private val useColor: Boolean = false,
+    useColor: Boolean = false,
     private val contextLines: Int = 1,
 ) {
+
+    init {
+        if (!useColor) Ansi.forceDisable()
+    }
 
     fun format(diagnostic: Diagnostic): String = buildString {
         val relativePath = makeRelative(diagnostic.filePath, projectRoot)
 
         appendLine(headerLine(diagnostic, relativePath))
-        appendLine(colorize(diagnostic.message, DIM))
+        appendLine(Ansi.dim(diagnostic.message))
 
         getCodeContext(diagnostic)?.let {
             appendLine()
@@ -25,19 +30,18 @@ class DiagnosticFormatter(
 
         diagnostic.suggestion?.let {
             appendLine()
-            appendLine("  ${colorize("suggestion:", CYAN + BOLD)} $it")
+            appendLine("  ${Ansi.bold(Ansi.cyan("suggestion:"))} $it")
         }
     }.trimEnd('\n') + "\n"
 
     private fun headerLine(diagnostic: Diagnostic, relativePath: String): String {
         val location = "$relativePath:${diagnostic.line}:${diagnostic.column}"
-        val severityColor = when (diagnostic.severity) {
-            DiagnosticSeverity.ERROR -> RED
-            DiagnosticSeverity.WARNING -> YELLOW
-            DiagnosticSeverity.NOTE -> BLUE
-            DiagnosticSeverity.HINT -> CYAN
+        return when (diagnostic.severity) {
+            DiagnosticSeverity.ERROR -> "${Ansi.bold(location)} → ${Ansi.bold(Ansi.red(diagnostic.type))}"
+            DiagnosticSeverity.WARNING -> "${Ansi.bold(location)} → ${Ansi.bold(Ansi.yellow(diagnostic.type))}"
+            DiagnosticSeverity.NOTE -> "${Ansi.bold(location)} → ${Ansi.bold(Ansi.blue(diagnostic.type))}"
+            DiagnosticSeverity.HINT -> "${Ansi.bold(location)} → ${Ansi.bold(Ansi.cyan(diagnostic.type))}"
         }
-        return "${colorize(location, BOLD)} → ${colorize(diagnostic.type, severityColor + BOLD)}"
     }
 
     private fun getCodeContext(diagnostic: Diagnostic): String? {
@@ -64,35 +68,22 @@ class DiagnosticFormatter(
 
     private fun sourceLine(number: Int, text: String, gutterWidth: Int, isOffending: Boolean): String {
         val numStr = number.toString().padStart(gutterWidth)
-        val gutter = colorize("$numStr |", if (isOffending) BOLD else DIM)
+        val gutter = if (isOffending) Ansi.bold("$numStr |") else Ansi.dim("$numStr |")
         return "  $gutter  $text"
     }
 
     private fun caretLine(gutterWidth: Int, diagnostic: Diagnostic): String {
-        val gutter = colorize(" ".repeat(gutterWidth) + " |", DIM)
+        val gutter = Ansi.dim(" ".repeat(gutterWidth) + " |")
         val leadingSpaces = " ".repeat((diagnostic.column - 1).coerceAtLeast(0))
         val caretWidth = (diagnostic.length ?: 1).coerceAtLeast(1)
-        val caretColor = when (diagnostic.severity) {
-            DiagnosticSeverity.ERROR -> RED
-            DiagnosticSeverity.WARNING -> YELLOW
-            DiagnosticSeverity.NOTE -> BLUE
-            DiagnosticSeverity.HINT -> CYAN
+        val caret = "^".repeat(caretWidth)
+        val coloredCaret = when (diagnostic.severity) {
+            DiagnosticSeverity.ERROR -> Ansi.bold(Ansi.red(caret))
+            DiagnosticSeverity.WARNING -> Ansi.bold(Ansi.yellow(caret))
+            DiagnosticSeverity.NOTE -> Ansi.bold(Ansi.blue(caret))
+            DiagnosticSeverity.HINT -> Ansi.bold(Ansi.cyan(caret))
         }
-        val caret = colorize("^".repeat(caretWidth), caretColor + BOLD)
         val hint = diagnostic.caretLabel?.let { " $it" } ?: ""
-        return "  $gutter  $leadingSpaces$caret$hint"
-    }
-
-    private fun colorize(text: String, code: String): String =
-        if (useColor) "$code$text$RESET" else text
-
-    private companion object {
-        const val RESET = "\u001B[0m"
-        const val BOLD = "\u001B[1m"
-        const val DIM = "\u001B[2m"
-        const val RED = "\u001B[31m"
-        const val YELLOW = "\u001B[33m"
-        const val BLUE = "\u001B[34m"
-        const val CYAN = "\u001B[36m"
+        return "  $gutter  $leadingSpaces$coloredCaret$hint"
     }
 }

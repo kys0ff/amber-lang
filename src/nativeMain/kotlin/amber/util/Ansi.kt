@@ -24,5 +24,6 @@ object Ansi {
     fun red(t: String) = wrap("\u001B[31m", t)
     fun green(t: String) = wrap("\u001B[32m", t)
     fun yellow(t: String) = wrap("\u001B[33m", t)
+    fun blue(t: String) = wrap("\u001B[34m", t)
     fun cyan(t: String) = wrap("\u001B[36m", t)
 }

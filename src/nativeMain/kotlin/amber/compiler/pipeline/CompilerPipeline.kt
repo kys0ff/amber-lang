@@ -14,23 +14,31 @@ import amber.compiler.type.TypeChecker
 import amber.runtime.BoehmGC
 import amber.runtime.CRuntimeProvider
 import amber.runtime.NoGC
+import amber.util.ConsoleLogger
+import amber.util.LogLevel
+import amber.util.Logger
+import amber.util.NoLogger
 
 /**
  * Orchestrates the various phases of the compiler pipeline.
  */
 class CompilerPipeline(val config: CompilerConfig) {
+
+    private val logger: Logger = if (config.quiet) NoLogger else ConsoleLogger(
+        minLevel = if (config.verbose) LogLevel.DEBUG else LogLevel.INFO,
+        useColor = config.useColor
+    )
     
     /**
      * Executes the compiler pipeline on the given source.
      */
     fun execute(source: String, filePath: String): CompilationResult {
-        if (config.verbose) {
-            println("→ pipeline start: $filePath")
-        }
+        logger.debug("→ pipeline start: $filePath")
+        
         val runtimeProvider = CRuntimeProvider()
 
         // 1. Lexing & Parsing
-        if (config.verbose) println("  → lexing & parsing")
+        logger.debug("  → lexing & parsing")
         val lexer = Lexer(source)
         val tokens = lexer.tokenize()
         val parser = Parser(tokens, filePath)
@@ -41,7 +49,7 @@ class CompilerPipeline(val config: CompilerConfig) {
         }
 
         // 2. Type Checking
-        if (config.verbose) println("  → type checking")
+        logger.debug("  → type checking")
         val typeChecker = TypeChecker(
             config,
             filePath,
@@ -56,11 +64,11 @@ class CompilerPipeline(val config: CompilerConfig) {
 
         // 3. Optimization (Tree Shaking)
         if (config.optimizationLevel != amber.compiler.OptimizationLevel.O0) {
-            if (config.verbose) println("  → tree shaking")
+            logger.debug("  → tree shaking")
             val shaker = TreeShaker(typeChecker.importedModulePrograms)
             shaker.shake(program)
         } else {
-            if (config.verbose) println("  → tree shaking skipped (O0)")
+            logger.debug("  → tree shaking skipped (O0)")
         }
 
         typeChecker.importedModuleTypeCheckers.values.forEach { it.reportUnusedExports() }
@@ -70,8 +78,12 @@ class CompilerPipeline(val config: CompilerConfig) {
         allDiagnostics.addAll(typeErrors)
         typeChecker.importedModuleTypeCheckers.values.forEach { allDiagnostics.addAll(it.errors) }
 
+        if (allDiagnostics.any { it.severity == DiagnosticSeverity.WARNING }) {
+            logger.warn("frontend produced warnings")
+        }
+
         // 4. Code Generation
-        if (config.verbose) println("  → code generation")
+        logger.debug("  → code generation")
         val allExpressionTypes = expressionTypes.toMutableMap()
         val allResolvedSymbols = resolvedSymbols.toMutableMap()
         typeChecker.importedModuleTypeCheckers.values.forEach {

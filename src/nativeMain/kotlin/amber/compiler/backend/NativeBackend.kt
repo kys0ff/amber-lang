@@ -1,12 +1,13 @@
 package amber.compiler.backend
 
 import amber.compiler.CompilerConfig
+import amber.util.Logger
 
 /**
  * Interface for native code compilers (TCC, LLVM, etc.)
  */
 interface NativeBackend {
-    fun compile(cCode: String, outputPath: String, config: CompilerConfig): NativeCompileResult
+    fun compile(cCode: String, outputPath: String, config: CompilerConfig, logger: Logger? = null): NativeCompileResult
 }
 
 sealed class NativeCompileResult {

@@ -3,10 +3,15 @@ package amber.cli
 import amber.compiler.CompilerConfig
 import amber.compiler.Transpiler
 import amber.compiler.backend.NativeCompileResult
+import amber.compiler.backend.NativeDiagnosticSeverity
 import amber.compiler.backend.tinycc.TccCompiler
 import amber.compiler.diagnostic.DiagnosticFormatter
 import amber.compiler.diagnostic.DiagnosticSeverity
 import amber.util.Ansi
+import amber.util.ConsoleLogger
+import amber.util.LogLevel
+import amber.util.Logger
+import amber.util.NoLogger
 import amber.util.ensureDirectoryExists
 import amber.util.fileExists
 import amber.util.joinPaths
@@ -20,6 +25,11 @@ import kotlin.system.exitProcess
 import kotlin.time.TimeSource
 
 class CompilerRunner(private val config: CompilerConfig) {
+
+    private val logger: Logger = if (config.quiet) NoLogger else ConsoleLogger(
+        minLevel = if (config.verbose) LogLevel.DEBUG else LogLevel.INFO,
+        useColor = config.useColor
+    )
 
     init {
         if (!config.useColor) Ansi.forceDisable()
@@ -41,7 +51,7 @@ class CompilerRunner(private val config: CompilerConfig) {
         val projectLoader = ProjectLoader()
         val context = when (val projectResult = projectLoader.load(config.entryFile)) {
             is ProjectFileResult.Failure -> {
-                printError("invalid project or file: ${projectResult.errors.joinToString(", ")}")
+                logger.error("invalid project or file: ${projectResult.errors.joinToString(", ")}")
                 exitProcess(1)
             }
 
@@ -66,17 +76,15 @@ class CompilerRunner(private val config: CompilerConfig) {
         val scriptPath = context.scriptPath
         val projectInfo = context.projectInfo
 
-        if (finalConfig.verbose) {
-            println(Ansi.dim("→ target      : ${config.entryFile}"))
-            println(Ansi.dim("→ project root: $projectRoot"))
-            println(Ansi.dim("→ entry file  : $scriptPath"))
-        }
+        logger.debug(Ansi.dim("→ target      : ${config.entryFile}"))
+        logger.debug(Ansi.dim("→ project root: $projectRoot"))
+        logger.debug(Ansi.dim("→ entry file  : $scriptPath"))
 
         val buildDir = joinPaths(projectRoot, ".build")
 
         val src = readFile(scriptPath)
         if (src.isEmpty() && !fileExists(scriptPath)) {
-            printError("could not read file at $scriptPath")
+            logger.error("could not read file at $scriptPath")
             exitProcess(1)
         }
 
@@ -93,6 +101,9 @@ class CompilerRunner(private val config: CompilerConfig) {
         }
 
         if (result.diagnostics.isNotEmpty()) {
+            if (result.diagnostics.any { it.severity == DiagnosticSeverity.WARNING }) {
+                logger.warn("compilation produced warnings")
+            }
             val formatter = DiagnosticFormatter(projectRoot, useColor = finalConfig.useColor)
             result.diagnostics.forEach { println(formatter.format(it)) }
         }
@@ -104,7 +115,7 @@ class CompilerRunner(private val config: CompilerConfig) {
         }
 
         if (finalConfig.checkOnly) {
-            if (!finalConfig.quiet) println(Ansi.green(Ansi.bold("✓ check passed")) + Ansi.dim(" in $projectRoot"))
+            logger.info(Ansi.green(Ansi.bold("✓ check passed")) + Ansi.dim(" in $projectRoot"))
             return
         }
 
@@ -127,18 +138,16 @@ class CompilerRunner(private val config: CompilerConfig) {
             amber.compiler.BackendType.TINY_CC -> TccCompiler(runtimeRoot)
         }
         val nativeCompileStartTime = timeSource?.markNow()
-        val compileResult = nativeBackend.compile(code, exePath, finalConfig)
+        val compileResult = nativeBackend.compile(code, exePath, finalConfig, logger)
         val nativeCompileDuration = nativeCompileStartTime?.elapsedNow()
 
         when (compileResult) {
             is NativeCompileResult.Success -> {
-                if (!finalConfig.quiet) {
-                    println(
-                        Ansi.green(Ansi.bold("✓")) + " compiled native " + Ansi.bold(
-                            artifactBaseName
-                        ) + Ansi.dim(" -> $exePath")
-                    )
-                }
+                logger.info(
+                    Ansi.green(Ansi.bold("✓")) + " compiled native " + Ansi.bold(
+                        artifactBaseName
+                    ) + Ansi.dim(" -> $exePath")
+                )
 
                 if (finalConfig.runAfterBuild) {
                     val executionStartTime = timeSource?.markNow()
@@ -157,15 +166,21 @@ class CompilerRunner(private val config: CompilerConfig) {
             }
 
             is NativeCompileResult.Failure -> {
-                printError("native compilation failed: ${compileResult.message}")
+                logger.error("native compilation failed: ${compileResult.message}")
+                compileResult.diagnostics.forEach { diag ->
+                    val loc = if (diag.file != null) "${diag.file}:${diag.line ?: ""}: " else ""
+                    val msg = "$loc${diag.message}"
+                    when (diag.severity) {
+                        NativeDiagnosticSeverity.ERROR -> logger.error(msg)
+                        NativeDiagnosticSeverity.WARNING -> logger.warn(msg)
+                        NativeDiagnosticSeverity.INFO -> logger.info(msg)
+                    }
+                }
                 exitProcess(1)
             }
         }
     }
 
-    private fun printError(message: String) {
-        println(Ansi.red(Ansi.bold("error:")) + " $message")
-    }
 
     @OptIn(ExperimentalForeignApi::class)
     private fun writeTextFile(path: String, content: String) {
