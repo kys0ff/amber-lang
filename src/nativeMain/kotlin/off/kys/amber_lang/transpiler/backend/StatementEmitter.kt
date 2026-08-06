@@ -5,8 +5,10 @@ import off.kys.amber_lang.transpiler.ast.EnumDeclaration
 import off.kys.amber_lang.transpiler.ast.Expression
 import off.kys.amber_lang.transpiler.ast.ExpressionStatement
 import off.kys.amber_lang.transpiler.ast.FunctionDeclaration
+import off.kys.amber_lang.transpiler.ast.IdentifierExpression
 import off.kys.amber_lang.transpiler.ast.IfStatement
 import off.kys.amber_lang.transpiler.ast.ImportStatement
+import off.kys.amber_lang.transpiler.ast.PanicExpression
 import off.kys.amber_lang.transpiler.ast.ReturnStatement
 import off.kys.amber_lang.transpiler.ast.Statement
 import off.kys.amber_lang.transpiler.ast.VariableDeclaration
@@ -22,7 +24,9 @@ class StatementEmitter(
     private val expressionTypes: Map<Expression, Type>,
     private val resolvedSymbols: Map<Expression, Symbol>
 ) {
-    fun emit(statement: Statement) {
+    private val returnTypeStack = mutableListOf<Type>()
+
+    fun emit(statement: Statement, declarationOnly: Boolean = false, isTopLevel: Boolean = false) {
         when (statement) {
             is BlockStatement -> {
                 writer.writeLine("{")
@@ -32,23 +36,39 @@ class StatementEmitter(
                 writer.writeLine("}")
             }
             is VariableDeclaration -> {
-                val type = expressionTypes[statement.initializer] ?: Type.AnyType
-                val cType = typeMapper.map(type)
                 val symbol = resolvedSymbols[statement.name]
+                val type = expressionTypes[statement.initializer] ?: symbol?.type ?: Type.AnyType
+                val cType = typeMapper.map(type)
                 val name = symbol?.let { symbolEmitter.mangle(it.name, it.namespace) } ?: symbolEmitter.mangle(statement.name.name)
-                writer.write("${cType} ${name}")
-                if (statement.initializer != null) {
-                    writer.write(" = ")
-                    expressionEmitter.emit(statement.initializer)
+                
+                if (declarationOnly) {
+                    writer.writeLine("${cType} ${name};")
+                } else {
+                    if (isTopLevel) {
+                        if (statement.initializer != null) {
+                            writer.write("${name} = ")
+                            expressionEmitter.emit(statement.initializer)
+                            writer.writeLine(";")
+                        }
+                    } else {
+                        writer.write("${cType} ${name}")
+                        if (statement.initializer != null) {
+                            writer.write(" = ")
+                            expressionEmitter.emit(statement.initializer)
+                        }
+                        writer.writeLine(";")
+                    }
                 }
-                writer.writeLine(";")
             }
             is FunctionDeclaration -> {
                 // Function declarations at top level or nested?
                 // C doesn't support nested functions easily (extensions exist), 
                 // but Amber might have them. For now, assume top level.
                 val symbol = resolvedSymbols[statement.name]
-                val returnType = symbol?.type?.let { if (it is Type.FunctionType) it.returnType else Type.UnitType } ?: Type.UnitType
+                
+                val returnType = (symbol?.type as? Type.FunctionType)?.returnType
+                    ?: Type.UnitType
+                
                 val cReturnType = typeMapper.map(returnType)
                 val name = symbol?.let { symbolEmitter.mangle(it.name, it.namespace) } ?: symbolEmitter.mangle(statement.name.name)
                 writer.write("${cReturnType} ${name}(")
@@ -61,13 +81,30 @@ class StatementEmitter(
                 }
                 writer.writeLine(") {")
                 writer.indent()
-                statement.body?.statements?.forEach { emit(it) }
+                returnTypeStack.add(returnType)
+                statement.body?.statements?.forEachIndexed { index, bodyStmt ->
+                    val isLast = index == statement.body.statements.size - 1
+                    if (isLast && bodyStmt is ExpressionStatement && returnType != Type.UnitType) {
+                        emit(ReturnStatement(bodyStmt.expression, bodyStmt.line, bodyStmt.column))
+                    } else {
+                        emit(bodyStmt)
+                    }
+                }
+                returnTypeStack.removeAt(returnTypeStack.size - 1)
                 writer.dedent()
                 writer.writeLine("}")
             }
             is ExpressionStatement -> {
                 writer.write("    ".repeat(0))
-                expressionEmitter.emit(statement.expression)
+                val expr = statement.expression
+                val currentReturnType = returnTypeStack.lastOrNull()
+                
+                if (expr is PanicExpression && !expr.isFatal && currentReturnType is Type.UnsafeType) {
+                    writer.write("return ")
+                    expressionEmitter.emit(expr)
+                } else {
+                    expressionEmitter.emit(expr)
+                }
                 writer.writeLine(";")
             }
             is IfStatement -> {
@@ -96,12 +133,36 @@ class StatementEmitter(
                 writer.writeLine("}")
             }
             is ReturnStatement -> {
-                writer.write("return")
-                if (statement.value != null) {
-                    writer.write(" ")
-                    expressionEmitter.emit(statement.value)
+                val currentReturnType = returnTypeStack.lastOrNull()
+                if (currentReturnType is Type.UnsafeType) {
+                    val exprType = statement.value?.let { expressionTypes[it] }
+                    if (exprType is Type.UnsafeType || exprType == Type.NothingType) {
+                        writer.write("return ")
+                        statement.value?.let { expressionEmitter.emit(it) } ?: writer.write("__amber_rt_result_error(\"null return\")")
+                        writer.writeLine(";")
+                    } else {
+                        writer.write("return __amber_rt_result_success(")
+                        if (statement.value != null) {
+                            if (exprType == Type.NumberType) {
+                                writer.write("__amber_rt_box_double(")
+                                expressionEmitter.emit(statement.value)
+                                writer.write(")")
+                            } else {
+                                expressionEmitter.emit(statement.value)
+                            }
+                        } else {
+                            writer.write("NULL")
+                        }
+                        writer.writeLine(");")
+                    }
+                } else {
+                    writer.write("return")
+                    if (statement.value != null && currentReturnType != Type.UnitType) {
+                        writer.write(" ")
+                        expressionEmitter.emit(statement.value)
+                    }
+                    writer.writeLine(";")
                 }
-                writer.writeLine(";")
             }
             is EnumDeclaration -> {
                 writer.writeLine("enum ${symbolEmitter.mangle(statement.name.name)} {")

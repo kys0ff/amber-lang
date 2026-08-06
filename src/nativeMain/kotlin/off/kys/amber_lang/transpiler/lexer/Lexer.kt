@@ -96,12 +96,19 @@ class Lexer(private val source: String) {
                     state.position++
                     state.column++
                 }
-                '#' -> { // Single-line comment
+                '#' -> { // Single-line comment (hash)
                     while (state.position < source.length && source[state.position] != '\n') {
                         state.position++
                         state.column++
                     }
-                    // Do not advance past newline, let nextToken handle it
+                }
+                '/' -> { // Potential single-line comment (double slash)
+                    if (state.position + 1 < source.length && source[state.position + 1] == '/') {
+                        while (state.position < source.length && source[state.position] != '\n') {
+                            state.position++
+                            state.column++
+                        }
+                    } else return // Not a comment, but an operator
                 }
                 else -> return // Stop skipping if it's not a skippable whitespace or comment start
             }

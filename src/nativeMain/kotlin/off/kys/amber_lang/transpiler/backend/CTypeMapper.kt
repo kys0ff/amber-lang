@@ -12,6 +12,7 @@ class CTypeMapper {
         Type.AnyType -> "void*"
         is Type.ArrayListType -> "__amber_list_t*"
         is Type.ListType -> "__amber_list_t*"
+        is Type.UnsafeType -> "struct AMBER_RESULT"
         is Type.FunctionType -> "void*" // Simplified for now
         is Type.EnumType -> "int"
         else -> "void*"

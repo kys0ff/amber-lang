@@ -27,18 +27,24 @@ class CBackend(
         runtimeEmitter.emitIntrinsics()
 
         // Separate declarations from executable statements
-        val declarations = program.statements.filter {
-            (it is FunctionDeclaration && !it.isIntrinsic) ||
-            (it is VariableDeclaration && !it.isIntrinsic)
-        }
-        val executable = program.statements.filter { it !is FunctionDeclaration && it !is VariableDeclaration }
+        val functions = program.statements.filterIsInstance<FunctionDeclaration>().filter { !it.isIntrinsic }
+        val variables = program.statements.filterIsInstance<VariableDeclaration>().filter { !it.isIntrinsic }
 
-        declarations.forEach { statementEmitter.emit(it) }
+        functions.forEach { statementEmitter.emit(it) }
+        variables.forEach { statementEmitter.emit(it, declarationOnly = true, isTopLevel = true) }
 
         writer.writeLine("int main(int argc, char** argv) {")
         writer.indent()
         writer.writeLine("GC_INIT();")
-        executable.forEach { statementEmitter.emit(it) }
+        
+        program.statements.forEach { stmt ->
+            when (stmt) {
+                is VariableDeclaration -> if (!stmt.isIntrinsic) statementEmitter.emit(stmt, isTopLevel = true)
+                is FunctionDeclaration -> {} // Already emitted
+                else -> statementEmitter.emit(stmt)
+            }
+        }
+        
         writer.writeLine("return 0;")
         writer.dedent()
         writer.writeLine("}")

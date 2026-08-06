@@ -1,0 +1,14 @@
+# Standard input/output module
+# Provides functions for interacting with the console and terminal.
+
+##
+# Prints the given value to the standard output.
+intrinsic func print(value: any)
+
+##
+# Prints the given value to the standard output, followed by a newline.
+intrinsic func println(value: any)
+
+##
+# Reads a line of text from the standard input.
+intrinsic func readln(): string

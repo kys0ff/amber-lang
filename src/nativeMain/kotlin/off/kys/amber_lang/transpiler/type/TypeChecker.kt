@@ -75,6 +75,9 @@ class TypeChecker(
         if (!currentScope.define(symbol)) {
             reportError(node, "identifier '${symbol.name}' already exists in this scope")
         }
+        if (node is Expression) {
+            resolvedSymbols[node] = symbol
+        }
     }
 
     private fun reportUnusedSymbols() {

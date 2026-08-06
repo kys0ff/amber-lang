@@ -46,16 +46,16 @@ object StandardLibrary {
                 func(
                     "print", listOf(Type.AnyType), Type.UnitType, "print",
                     cImpl = """
-                        void __amber_rt_print(void* val) {
-                            if (val) printf("%s", (char*)val);
+                        void __amber_rt_print(const void* val) {
+                            if (val) printf("%s", (const char*)val);
                         }
                     """.trimIndent()
                 )
                 func(
                     "println", listOf(Type.AnyType), Type.UnitType, "println",
                     cImpl = """
-                        void __amber_rt_println(void* val) {
-                            if (val) printf("%s\n", (char*)val);
+                        void __amber_rt_println(const void* val) {
+                            if (val) printf("%s\n", (const char*)val);
                             else printf("\n");
                         }
                     """.trimIndent()

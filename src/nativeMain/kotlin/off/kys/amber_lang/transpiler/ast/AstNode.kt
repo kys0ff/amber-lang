@@ -10,7 +10,7 @@ sealed class AstNode(
 }
 
 // Program structure
-data class Program(
+class Program(
     val statements: List<Statement>,
     override val line: Int = -1,
     override val column: Int = -1
@@ -20,7 +20,7 @@ data class Program(
 
 sealed class Statement(override val line: Int = -1, override val column: Int = -1) : AstNode(line, column)
 
-data class ImportStatement(
+class ImportStatement(
     val path: String,
     val asName: IdentifierExpression?,
     override val line: Int = -1,
@@ -29,7 +29,7 @@ data class ImportStatement(
     override val children: List<AstNode> get() = listOfNotNull(asName)
 }
 
-data class Parameter(
+class Parameter(
     val name: IdentifierExpression,
     val typeAnnotation: String?,
     val defaultValue: Expression?,
@@ -39,7 +39,7 @@ data class Parameter(
     override val children: List<AstNode> get() = listOfNotNull(name, defaultValue)
 }
 
-data class FunctionDeclaration(
+class FunctionDeclaration(
     val name: IdentifierExpression,
     val parameters: List<Parameter>,
     val returnTypeAnnotation: String?,
@@ -51,7 +51,7 @@ data class FunctionDeclaration(
     override val children: List<AstNode> get() = listOf(name) + parameters + listOfNotNull(body)
 }
 
-data class VariableDeclaration(
+class VariableDeclaration(
     val name: IdentifierExpression,
     val typeAnnotation: String?,
     val initializer: Expression?,
@@ -63,7 +63,7 @@ data class VariableDeclaration(
     override val children: List<AstNode> get() = listOfNotNull(name, initializer)
 }
 
-data class EnumDeclaration(
+class EnumDeclaration(
     val name: IdentifierExpression,
     val variants: List<IdentifierExpression>,
     override val line: Int = -1,
@@ -72,7 +72,7 @@ data class EnumDeclaration(
     override val children: List<AstNode> get() = listOf(name) + variants
 }
 
-data class IfStatement(
+class IfStatement(
     val condition: Expression,
     val thenBranch: BlockStatement,
     val elseBranch: BlockStatement?,
@@ -82,7 +82,7 @@ data class IfStatement(
     override val children: List<AstNode> get() = listOfNotNull(condition, thenBranch, elseBranch)
 }
 
-data class WhileStatement(
+class WhileStatement(
     val condition: Expression,
     val body: BlockStatement,
     override val line: Int = -1,
@@ -91,7 +91,7 @@ data class WhileStatement(
     override val children: List<AstNode> get() = listOf(condition, body)
 }
 
-data class ReturnStatement(
+class ReturnStatement(
     val value: Expression?,
     override val line: Int = -1,
     override val column: Int = -1
@@ -99,7 +99,7 @@ data class ReturnStatement(
     override val children: List<AstNode> get() = listOfNotNull(value)
 }
 
-data class BlockStatement(
+class BlockStatement(
     val statements: List<Statement>,
     override val line: Int = -1,
     override val column: Int = -1
@@ -107,7 +107,7 @@ data class BlockStatement(
     override val children: List<AstNode> get() = statements
 }
 
-data class ExpressionStatement(
+class ExpressionStatement(
     val expression: Expression,
     override val line: Int = -1,
     override val column: Int = -1
@@ -117,7 +117,7 @@ data class ExpressionStatement(
 
 sealed class Expression(override val line: Int = -1, override val column: Int = -1) : AstNode(line, column)
 
-data class BinaryExpression(
+class BinaryExpression(
     val left: Expression,
     val operator: String,
     val right: Expression,
@@ -127,7 +127,7 @@ data class BinaryExpression(
     override val children: List<AstNode> get() = listOf(left, right)
 }
 
-data class IsExpression(
+class IsExpression(
     val left: Expression,
     val typeName: String,
     override val line: Int = -1,
@@ -136,7 +136,7 @@ data class IsExpression(
     override val children: List<AstNode> get() = listOf(left)
 }
 
-data class UnaryExpression(
+class UnaryExpression(
     val operator: String,
     val operand: Expression,
     override val line: Int = -1,
@@ -145,7 +145,7 @@ data class UnaryExpression(
     override val children: List<AstNode> get() = listOf(operand)
 }
 
-data class LiteralExpression(
+class LiteralExpression(
     val value: Any?,
     override val line: Int = -1,
     override val column: Int = -1
@@ -153,7 +153,7 @@ data class LiteralExpression(
     override val children: List<AstNode> get() = emptyList()
 }
 
-data class IdentifierExpression(
+class IdentifierExpression(
     val name: String,
     override val line: Int = -1,
     override val column: Int = -1,
@@ -162,7 +162,7 @@ data class IdentifierExpression(
     override val children: List<AstNode> get() = emptyList()
 }
 
-data class CallExpression(
+class CallExpression(
     val callee: Expression,
     val arguments: List<Expression>,
     override val line: Int = -1,
@@ -171,7 +171,7 @@ data class CallExpression(
     override val children: List<AstNode> get() = listOf(callee) + arguments
 }
 
-data class PanicExpression(
+class PanicExpression(
     val message: Expression?,
     val isFatal: Boolean = false,
     override val line: Int = -1,
@@ -180,7 +180,7 @@ data class PanicExpression(
     override val children: List<AstNode> get() = listOfNotNull(message)
 }
 
-data class CatchExpression(
+class CatchExpression(
     val target: Expression,
     val errorVarName: String,
     val errorVarType: String?,
@@ -191,7 +191,7 @@ data class CatchExpression(
     override val children: List<AstNode> get() = listOf(target, body)
 }
 
-data class IndexAccessExpression(
+class IndexAccessExpression(
     val target: Expression,
     val index: Expression,
     override val line: Int = -1,
@@ -200,7 +200,7 @@ data class IndexAccessExpression(
     override val children: List<AstNode> get() = listOf(target, index)
 }
 
-data class ArrayLiteralExpression(
+class ArrayLiteralExpression(
     val elements: List<Expression>,
     override val line: Int = -1,
     override val column: Int = -1,
@@ -208,7 +208,7 @@ data class ArrayLiteralExpression(
     override val children: List<AstNode> get() = elements
 }
 
-data class AssignmentExpression(
+class AssignmentExpression(
     val target: IdentifierExpression,
     val value: Expression,
     override val line: Int = -1,
@@ -217,7 +217,7 @@ data class AssignmentExpression(
     override val children: List<AstNode> get() = listOf(target, value)
 }
 
-data class MemberAccessExpression(
+class MemberAccessExpression(
     val target: Expression,
     val member: IdentifierExpression,
     override val line: Int = -1,
@@ -226,7 +226,7 @@ data class MemberAccessExpression(
     override val children: List<AstNode> get() = listOf(target, member)
 }
 
-data class ErrorNode(
+class ErrorNode(
     val message: String,
     override val line: Int = -1,
     override val column: Int = -1
