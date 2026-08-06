@@ -756,13 +756,6 @@ class TypeChecker(
                 reportError(function, "intrinsic functions cannot have a body")
             }
         }
-        val declaredReturnType =
-            function.returnTypeAnnotation?.let { typeResolver.resolveType(it, function, currentScope) } ?: Type.Unit
-        val previousFunctionReturnType = currentFunctionReturnType
-        currentFunctionReturnType = declaredReturnType
-        
-        val previousPropagated = currentFunctionPropagatedUnsafe
-        currentFunctionPropagatedUnsafe = false
 
         val paramTypes = mutableListOf<Type>()
         val hasDefaultValues = mutableListOf<Boolean>()
@@ -804,6 +797,34 @@ class TypeChecker(
             hasDefaultValues.add(param.defaultValue != null)
         }
 
+        val isImplicitReturn = function.returnTypeAnnotation == null &&
+                function.body != null &&
+                function.body.statements.size == 1 &&
+                function.body.statements[0] is ExpressionStatement
+
+        var inferredReturnType: Type? = null
+        if (isImplicitReturn) {
+            val inferenceScope = currentScope.enterScope()
+            function.parameters.forEachIndexed { index, param ->
+                inferenceScope.define(Symbol(param.name.name, paramTypes[index], line = param.name.line, column = param.name.column))
+            }
+            val originalScope = currentScope
+            currentScope = inferenceScope
+            val firstExpr = (function.body.statements[0] as ExpressionStatement).expression
+            inferredReturnType = visitExpression(firstExpr, allowUnsafe = true)
+            currentScope = originalScope
+        }
+
+        val declaredReturnType = function.returnTypeAnnotation?.let {
+            typeResolver.resolveType(it, function, currentScope)
+        } ?: inferredReturnType ?: Type.Unit
+
+        val previousFunctionReturnType = currentFunctionReturnType
+        currentFunctionReturnType = declaredReturnType
+
+        val previousPropagated = currentFunctionPropagatedUnsafe
+        currentFunctionPropagatedUnsafe = false
+
         val functionType = Type.Function(paramTypes, hasDefaultValues, declaredReturnType)
         val functionSymbol = Symbol(
             function.name.name,
@@ -829,7 +850,7 @@ class TypeChecker(
             defineSymbol(param.name, symbol)
         }
 
-        function.body?.let { 
+        function.body?.let {
             visitBlockStatement(it, isExpression = true, expectedReturnType = declaredReturnType, contextName = "function '${function.name.name}'")
             if (declaredReturnType != Type.Unit && !definitelyReturns(it)) {
                 reportError(

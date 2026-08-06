@@ -169,6 +169,21 @@ class Test {
     }
 
     @Test
+    fun infersReturnTypeFromSingleExpressionBody() {
+        val source = """
+            use "core:str"
+            func get_name(number: num = 4) {
+              "name: " + str.to_string(number)
+            }
+            val s: string = get_name(10)
+        """.trimIndent()
+
+        val result = transpile(source)
+
+        assertTrue(result.diagnostics.none { it.severity == DiagnosticSeverity.ERROR }, "expected no errors for inferred return type, got: ${result.diagnostics}")
+    }
+
+    @Test
     fun rejectsLegacyTypeNames() {
         val source = """
             val b: boolean = true
