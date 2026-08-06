@@ -17,19 +17,12 @@ class TypeResolver(private val errorReporter: (node: AstNode, message: String, s
         if (typeName.endsWith("[]")) {
             val elementTypeStr = typeName.substring(0, typeName.length - 2)
             val elementType = resolveType(elementTypeStr, node, scope)
-            if (elementType is Type.Enum) {
-                errorReporter(node, "enums cannot be used in lists", "enums are currently not supported in lists")
-            }
             return Type.List(elementType)
         }
         if (typeName.contains("<") && typeName.endsWith(">")) {
             val baseType = typeName.substringBefore("<").trim()
             val elementTypeStr = typeName.substringAfter("<").substringBeforeLast(">").trim()
             val elementType = resolveType(elementTypeStr, node, scope)
-
-            if (elementType is Type.Enum && (baseType == "list" || baseType == "array_list")) {
-                errorReporter(node, "enums cannot be used in lists", "enums are currently not supported in lists")
-            }
 
             return when (baseType) {
                 "array_list" -> Type.ArrayList(elementType)

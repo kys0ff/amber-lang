@@ -158,13 +158,22 @@ class StatementEmitter(
                 }
             }
             is EnumDeclaration -> {
-                writer.writeLine("enum ${symbolEmitter.mangle(statement.name.name)} {")
+                val symbol = resolvedSymbols[statement.name]
+                val enumType = symbol?.type as? Type.EnumNamespace
+                val ns = enumType?.enumType?.moduleNamespace
+                val enumName = statement.name.name
+
+                val variantsVar = symbolEmitter.mangle("variants_$enumName", ns)
+                writer.writeLine("const char* $variantsVar[] = { ${statement.variants.joinToString(", ") { "\"${it.name}\"" }} };")
+
+                writer.writeLine("typedef enum {")
                 writer.indent()
                 statement.variants.forEachIndexed { index, variant ->
-                    writer.writeLine("${symbolEmitter.mangle(variant.name)}${if (index < statement.variants.size - 1) "," else ""}")
+                    writer.writeLine("${symbolEmitter.mangle("${enumName}_${variant.name}", ns)}${if (index < statement.variants.size - 1) "," else ""}")
                 }
                 writer.dedent()
-                writer.writeLine("};")
+                writer.writeLine("} ${symbolEmitter.mangle(enumName, ns)};")
+                writer.writeLine("__amber_type_t ${symbolEmitter.mangle("type_$enumName", ns)} = { \"$enumName\", ${100 + (ns ?: "").hashCode() + enumName.hashCode()}, $variantsVar, ${statement.variants.size} };")
             }
             is ImportStatement -> {}
         }

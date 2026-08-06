@@ -49,6 +49,7 @@ class TypeChecker(
     internal val resolvedSymbols = mutableMapOf<Expression, Symbol>()
     internal val resolvedIsTypes = mutableMapOf<IsExpression, Type>()
     val errors = mutableListOf<Diagnostic>()
+    private var isQuietMode = false
     private var currentFunctionReturnType: Type? = null
     private var currentFunctionPropagatedUnsafe = false
     private val expectedReturnTypes = mutableListOf<Type>()
@@ -74,10 +75,12 @@ class TypeChecker(
     }
 
     private fun reportError(node: AstNode, message: String, suggestion: String? = null) {
+        if (isQuietMode) return
         errors.add(TypeError(currentFilePath, node.line, node.column, message, node.length, suggestion = suggestion))
     }
 
     private fun reportWarning(node: AstNode, message: String, suggestion: String? = null) {
+        if (isQuietMode) return
         errors.add(
             GenericDiagnostic(
                 filePath = currentFilePath,
@@ -158,6 +161,19 @@ class TypeChecker(
     fun hasErrors(): Boolean = errors.any { it.severity == DiagnosticSeverity.ERROR }
 
     private fun visitProgram(program: Program) {
+        // Pass 1: Register top-level symbols (Enums and Function signatures)
+        program.statements.forEach {
+            if (it is EnumDeclaration) {
+                visitEnumDeclaration(it)
+            } else if (it is FunctionDeclaration) {
+                preRegisterFunction(it)
+            }
+        }
+
+        // Pass 2: Infer return types for all functions
+        program.statements.filterIsInstance<FunctionDeclaration>().forEach { inferFunctionReturnType(it) }
+
+        // Pass 3: Full semantic analysis and error reporting
         program.statements.forEach {
             if (!isMainFile && !isDeclaration(it)) {
                 reportError(
@@ -166,9 +182,75 @@ class TypeChecker(
                     "move this logic into a function or the main script"
                 )
             }
-            visitStatement(it)
+            if (it !is EnumDeclaration) {
+                visitStatement(it)
+            }
         }
         reportUnusedSymbols()
+    }
+
+    private fun inferFunctionReturnType(function: FunctionDeclaration) {
+        if (function.isIntrinsic || function.returnTypeAnnotation != null) return
+        
+        val functionSymbol = currentScope.resolve(function.name.name) ?: return
+        val paramTypes = (functionSymbol.type as Type.Function).parameterTypes
+        
+        val inferenceScope = currentScope.enterScope()
+        function.parameters.forEachIndexed { index, param ->
+            inferenceScope.define(
+                Symbol(
+                    param.name.name,
+                    paramTypes[index],
+                    isMutable = true,
+                    isParameter = true,
+                    line = param.name.line,
+                    column = param.name.column
+                )
+            )
+        }
+        
+        val originalScope = currentScope
+        currentScope = inferenceScope
+        
+        val wasQuiet = isQuietMode
+        isQuietMode = true
+        
+        // Quietly visit the body to infer return type
+        val inferredType = function.body?.let { body ->
+            val lastStmt = body.statements.lastOrNull()
+            if (lastStmt is ExpressionStatement) {
+                visitExpression(lastStmt.expression, allowUnsafe = true)
+            } else if (lastStmt is ReturnStatement) {
+                lastStmt.value?.let { visitExpression(it, allowUnsafe = true) } ?: Type.Unit
+            } else {
+                Type.Unit
+            }
+        } ?: Type.Unit
+        
+        isQuietMode = wasQuiet
+        currentScope = originalScope
+        functionSymbol.type = (functionSymbol.type as Type.Function).copy(returnType = inferredType)
+    }
+
+    private fun preRegisterFunction(function: FunctionDeclaration) {
+        val paramTypes = function.parameters.map { param ->
+            param.typeAnnotation?.let { typeResolver.resolveType(it, param, currentScope) } ?: Type.Any
+        }
+        val hasDefaultValues = function.parameters.map { it.defaultValue != null }
+        val declaredReturnType = function.returnTypeAnnotation?.let {
+            typeResolver.resolveType(it, function, currentScope)
+        } ?: Type.Unit
+
+        val functionType = Type.Function(paramTypes, hasDefaultValues, declaredReturnType)
+        val functionSymbol = Symbol(
+            function.name.name,
+            functionType,
+            isIntrinsic = function.isIntrinsic,
+            line = function.name.line,
+            column = function.name.column,
+            namespace = namespace
+        )
+        currentScope.define(functionSymbol)
     }
 
     private fun isDeclaration(statement: Statement): Boolean {
@@ -722,18 +804,20 @@ class TypeChecker(
             val isLast = index == block.statements.size - 1
 
             if (block.statements.size == 1 && isExpression && isLast && statement is ReturnStatement) {
-                errors.add(
-                    GenericDiagnostic(
-                        filePath = currentFilePath,
-                        line = statement.line,
-                        column = statement.column,
-                        message = "redundant return keyword",
-                        type = "Warning",
-                        suggestion = "remove the 'return' keyword as it's the only expression in this block",
-                        severity = DiagnosticSeverity.WARNING,
-                        length = 6
+                if (!isQuietMode) {
+                    errors.add(
+                        GenericDiagnostic(
+                            filePath = currentFilePath,
+                            line = statement.line,
+                            column = statement.column,
+                            message = "redundant return keyword",
+                            type = "Warning",
+                            suggestion = "remove the 'return' keyword as it's the only expression in this block",
+                            severity = DiagnosticSeverity.WARNING,
+                            length = 6
+                        )
                     )
-                )
+                }
             }
 
             visitStatement(statement, skipUnusedWarning = isExpression && isLast)
@@ -779,7 +863,7 @@ class TypeChecker(
     }
 
     private fun visitEnumDeclaration(declaration: EnumDeclaration) {
-        val enumType = Type.Enum(declaration.name.name, declaration.variants.map { it.name })
+        val enumType = Type.Enum(declaration.name.name, declaration.variants.map { it.name }, namespace)
         val namespaceType = Type.EnumNamespace(enumType)
         val symbol = Symbol(
             declaration.name.name,
@@ -846,7 +930,7 @@ class TypeChecker(
         val isImplicitReturn = function.returnTypeAnnotation == null &&
                 function.body != null &&
                 function.body.statements.size == 1 &&
-                function.body.statements[0] is ExpressionStatement
+                (function.body.statements[0] is ExpressionStatement || function.body.statements[0] is ReturnStatement)
 
         var inferredReturnType: Type? = null
         if (isImplicitReturn) {
@@ -865,8 +949,9 @@ class TypeChecker(
             }
             val originalScope = currentScope
             currentScope = inferenceScope
-            val firstExpr = (function.body.statements[0] as ExpressionStatement).expression
-            inferredReturnType = visitExpression(firstExpr, allowUnsafe = true)
+            val lastStmt = function.body.statements[0]
+            val firstExpr = if (lastStmt is ExpressionStatement) lastStmt.expression else (lastStmt as ReturnStatement).value
+            inferredReturnType = firstExpr?.let { visitExpression(it, allowUnsafe = true) } ?: Type.Unit
             currentScope = originalScope
         }
 
@@ -892,16 +977,24 @@ class TypeChecker(
             }
         }
         
-        val functionSymbol = Symbol(
-            function.name.name,
-            functionType,
-            inferableParameterIndices = inferableParameterIndices,
-            isIntrinsic = function.isIntrinsic,
-            line = function.name.line,
-            column = function.name.column,
-            namespace = namespace
-        )
-        defineSymbol(function.name, functionSymbol)
+        val existingSymbol = currentScope.resolve(function.name.name)
+        val functionSymbol: Symbol
+        if (existingSymbol != null && existingSymbol.line == function.name.line && existingSymbol.column == function.name.column) {
+            existingSymbol.type = functionType
+            functionSymbol = existingSymbol
+        } else {
+            functionSymbol = Symbol(
+                function.name.name,
+                functionType,
+                inferableParameterIndices = inferableParameterIndices,
+                isIntrinsic = function.isIntrinsic,
+                line = function.name.line,
+                column = function.name.column,
+                namespace = namespace
+            )
+            defineSymbol(function.name, functionSymbol)
+        }
+        resolvedSymbols[function.name] = functionSymbol
 
         val paramSymbols = mutableListOf<Symbol>()
         currentScope = currentScope.enterScope()

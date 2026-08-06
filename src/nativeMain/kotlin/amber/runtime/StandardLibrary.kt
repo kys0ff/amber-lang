@@ -207,6 +207,12 @@ object StandardLibrary {
                         if (h->type == &__amber_type_string) {
                             return __amber_rt_unbox_string(val);
                         }
+                        if (h->type->variant_count > 0) {
+                            __amber_box_enum_t* e = (__amber_box_enum_t*)val;
+                            if (e->value >= 0 && e->value < h->type->variant_count) {
+                                return (char*)h->type->variants[e->value];
+                            }
+                        }
                         if (h->type == &__amber_type_list) {
                             __amber_list_t* l = (__amber_list_t*)val;
                             char* res = "[";

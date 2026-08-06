@@ -27,6 +27,8 @@ class RuntimeEmitter(
         writer.indent()
         writer.writeLine("const char* name;")
         writer.writeLine("int32_t id;")
+        writer.writeLine("const char** variants;")
+        writer.writeLine("int variant_count;")
         writer.dedent()
         writer.writeLine("} __amber_type_t;")
         writer.writeLine()
@@ -64,6 +66,15 @@ class RuntimeEmitter(
         writer.writeLine("char* value;")
         writer.dedent()
         writer.writeLine("} __amber_box_string_t;")
+        writer.writeLine()
+
+        // Boxed Enum
+        writer.writeLine("typedef struct {")
+        writer.indent()
+        writer.writeLine("__amber_header_t header;")
+        writer.writeLine("int value;")
+        writer.dedent()
+        writer.writeLine("} __amber_box_enum_t;")
         writer.writeLine()
 
         // List/Array type
@@ -163,6 +174,18 @@ class RuntimeEmitter(
                 return (char*)p;
             }
             
+            static inline void* __amber_rt_box_enum(int value, __amber_type_t* type) {
+                __amber_box_enum_t* p = (__amber_box_enum_t*)__amber_rt_alloc(sizeof(__amber_box_enum_t));
+                p->header.type = type;
+                p->value = value;
+                return p;
+            }
+            
+            static inline int __amber_rt_unbox_enum(void* p) {
+                if (!p) return 0;
+                return ((__amber_box_enum_t*)p)->value;
+            }
+            
             static inline int __amber_rt_is_error(struct AMBER_RESULT res) {
                 return res.has_error;
             }
@@ -196,10 +219,10 @@ class RuntimeEmitter(
     }
 
     fun emitDefinitions() {
-        writer.writeLine("__amber_type_t __amber_type_double = { \"num\", 1 };")
-        writer.writeLine("__amber_type_t __amber_type_string = { \"string\", 2 };")
-        writer.writeLine("__amber_type_t __amber_type_bool = { \"bool\", 3 };")
-        writer.writeLine("__amber_type_t __amber_type_list = { \"list\", 4 };")
+        writer.writeLine("__amber_type_t __amber_type_double = { \"num\", 1, NULL, 0 };")
+        writer.writeLine("__amber_type_t __amber_type_string = { \"string\", 2, NULL, 0 };")
+        writer.writeLine("__amber_type_t __amber_type_bool = { \"bool\", 3, NULL, 0 };")
+        writer.writeLine("__amber_type_t __amber_type_list = { \"list\", 4, NULL, 0 };")
         writer.writeLine()
     }
 }

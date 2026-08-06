@@ -27,7 +27,6 @@ import amber.compiler.ast.StringTemplateExpression
 import amber.compiler.ast.UnaryExpression
 import amber.compiler.ast.VariableDeclaration
 import amber.compiler.ast.WhileStatement
-import amber.compiler.diagnostic.DiagnosticSeverity
 import amber.compiler.diagnostic.SyntaxError
 import amber.compiler.lexer.Lexer
 import amber.compiler.lexer.Token
@@ -274,22 +273,9 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
         val variants = mutableListOf<IdentifierExpression>()
         while (peek() !is Token.EOF && (peek() !is Token.Separator || (peek() as Token.Separator).value != "}")) {
             variants.add(parseIdentifierExpression())
-            val hadNewlineBefore = peek() is Token.Newline
             skipNewlines()
             if (peek() is Token.Separator && (peek() as Token.Separator).value == ",") {
-                val commaToken = consume()
-                val hadNewlineAfter = peek() is Token.Newline
-                if (hadNewlineBefore || hadNewlineAfter) {
-                    errors.add(
-                        SyntaxError(
-                            filePath,
-                            commaToken.line,
-                            commaToken.column,
-                            "unnecessary comma in enum declaration",
-                            DiagnosticSeverity.WARNING
-                        )
-                    )
-                }
+                consume()
                 skipNewlines()
             }
         }
@@ -525,6 +511,7 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
                         expectToken(")")
                         inner
                     }
+
                     "[" -> {
                         val elements = mutableListOf<Expression>()
                         skipNewlines()
@@ -549,6 +536,7 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
                         }
                         ArrayLiteralExpression(elements, token.line, token.column)
                     }
+
                     else -> {
                         reportError("unexpected token '${token.value()}'")
                         throw ParserRecoveryException()
@@ -576,9 +564,11 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
                                 expr.column
                             )
                         }
+
                         "(" -> {
                             expr = parseCallExpression(expr)
                         }
+
                         "[" -> {
                             consume()
                             skipNewlines()
@@ -587,6 +577,7 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
                             expectToken("]")
                             expr = IndexAccessExpression(expr, index, expr.line, expr.column)
                         }
+
                         else -> break
                     }
                 }
@@ -630,6 +621,7 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
                                         orToken.column
                                     )
                                 }
+
                                 "catch" -> {
                                     consume()
                                     expectToken("(")
@@ -651,12 +643,14 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
                                         orToken.column
                                     )
                                 }
+
                                 else -> {
                                     reportError("expected 'panic' or 'catch' after 'or'")
                                     throw ParserRecoveryException()
                                 }
                             }
                         }
+
                         else -> {
                             reportError("expected 'panic' or 'catch' after 'or'")
                             throw ParserRecoveryException()

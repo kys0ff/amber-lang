@@ -37,7 +37,11 @@ sealed interface Type {
         override fun toString() = "module { ${exportedSymbols.keys.joinToString(", ")} }"
     }
     
-    data class Enum(val name: kotlin.String, val variants: kotlin.collections.List<kotlin.String>) : Type {
+    data class Enum(
+        val name: kotlin.String,
+        val variants: kotlin.collections.List<kotlin.String>,
+        val moduleNamespace: kotlin.String? = null
+    ) : Type {
         override fun toString() = name
     }
     

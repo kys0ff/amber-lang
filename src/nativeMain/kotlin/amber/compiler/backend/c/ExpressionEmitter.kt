@@ -54,6 +54,12 @@ class ExpressionEmitter(
                 writer.write(")")
                 return
             }
+            if (actualType is Type.Enum) {
+                writer.write("__amber_rt_box_enum(")
+                emitRaw(expression)
+                writer.write(", &${symbolEmitter.mangle("type_${actualType.name}", actualType.moduleNamespace)})")
+                return
+            }
         }
         
         // Unboxing: any -> primitive
@@ -72,6 +78,12 @@ class ExpressionEmitter(
             }
             if (expectedType == Type.String) {
                 writer.write("__amber_rt_unbox_string(")
+                emitRaw(expression)
+                writer.write(")")
+                return
+            }
+            if (expectedType is Type.Enum) {
+                writer.write("__amber_rt_unbox_enum(")
                 emitRaw(expression)
                 writer.write(")")
                 return
@@ -182,6 +194,13 @@ class ExpressionEmitter(
                 emit(expression.value, symbol?.type)
             }
             is MemberAccessExpression -> {
+                val targetType = expressionTypes[expression.target]
+                if (targetType is Type.EnumNamespace) {
+                    val enumType = targetType.enumType
+                    writer.write(symbolEmitter.mangle("${enumType.name}_${expression.member.name}", enumType.moduleNamespace))
+                    return
+                }
+
                 val symbol = resolvedSymbols[expression]
                 if (symbol != null) {
                     emitSymbol(symbol)
@@ -201,6 +220,7 @@ class ExpressionEmitter(
                     is Type.String -> "&__amber_type_string"
                     is Type.Boolean -> "&__amber_type_bool"
                     is Type.List, is Type.ArrayList -> "&__amber_type_list"
+                    is Type.Enum -> "&${symbolEmitter.mangle("type_${targetType.name}", targetType.moduleNamespace)}"
                     else -> "NULL"
                 }
                 writer.write("__amber_rt_is_type(")
@@ -324,7 +344,7 @@ class ExpressionEmitter(
     }
 
     private fun isPrimitive(type: Type): Boolean {
-        return type == Type.Number || type == Type.Boolean || type == Type.String || type == Type.Char
+        return type == Type.Number || type == Type.Boolean || type == Type.String || type == Type.Char || type is Type.Enum
     }
 
     private fun emitSymbol(symbol: Symbol) {
@@ -363,17 +383,7 @@ class ExpressionEmitter(
             emit(expr)
         } else {
             writer.write("__amber_rt_to_string(")
-            if (type == Type.Number) {
-                writer.write("__amber_rt_box_double(")
-                emit(expr)
-                writer.write(")")
-            } else if (type == Type.Boolean) {
-                writer.write("__amber_rt_box_bool(")
-                emit(expr)
-                writer.write(")")
-            } else {
-                emit(expr)
-            }
+            emit(expr, Type.Any)
             writer.write(")")
         }
     }
