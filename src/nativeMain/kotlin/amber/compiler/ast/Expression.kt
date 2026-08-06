@@ -114,6 +114,14 @@ class MemberAccessExpression(
     override val children: List<AstNode> get() = listOf(target, member)
 }
 
+class StringTemplateExpression(
+    val segments: List<Expression>,
+    line: Int = -1,
+    column: Int = -1,
+) : Expression(line, column) {
+    override val children: List<AstNode> get() = segments
+}
+
 class ErrorNode(
     val message: String,
     line: Int = -1,

@@ -24,6 +24,7 @@ import amber.compiler.ast.PanicExpression
 import amber.compiler.ast.Program
 import amber.compiler.ast.ReturnStatement
 import amber.compiler.ast.Statement
+import amber.compiler.ast.StringTemplateExpression
 import amber.compiler.ast.UnaryExpression
 import amber.compiler.ast.VariableDeclaration
 import amber.compiler.ast.WhileStatement
@@ -200,6 +201,7 @@ class TypeChecker(
             is CallExpression -> visitCallExpression(expression)
             is AssignmentExpression -> visitAssignmentExpression(expression)
             is MemberAccessExpression -> visitMemberAccessExpression(expression)
+            is StringTemplateExpression -> visitStringTemplateExpression(expression)
             is ArrayLiteralExpression -> visitArrayLiteralExpression(expression)
             is IndexAccessExpression -> visitIndexAccessExpression(expression)
             is PanicExpression -> visitPanicExpression(expression)
@@ -317,6 +319,11 @@ class TypeChecker(
             )
             Type.Error
         }
+    }
+
+    private fun visitStringTemplateExpression(expression: StringTemplateExpression): Type {
+        expression.segments.forEach { visitExpression(it) }
+        return Type.String
     }
 
     private fun visitIdentifierExpression(identifier: IdentifierExpression): Type {

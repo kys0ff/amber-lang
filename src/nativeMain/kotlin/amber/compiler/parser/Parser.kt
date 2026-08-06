@@ -23,6 +23,7 @@ import amber.compiler.ast.Parameter
 import amber.compiler.ast.Program
 import amber.compiler.ast.ReturnStatement
 import amber.compiler.ast.Statement
+import amber.compiler.ast.StringTemplateExpression
 import amber.compiler.ast.UnaryExpression
 import amber.compiler.ast.VariableDeclaration
 import amber.compiler.ast.WhileStatement
@@ -746,17 +747,7 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
         if (segments.isEmpty()) return LiteralExpression("", token.line, token.column)
         if (segments.size == 1 && segments[0] is LiteralExpression) return segments[0]
 
-        return segments.map {
-            if (it is LiteralExpression && it.value is String) it
-            else CallExpression(
-                IdentifierExpression("to_string", it.line, it.column, isSynthetic = true),
-                listOf(it),
-                it.line,
-                it.column
-            )
-        }.reduce { acc, expression ->
-            BinaryExpression(acc, "+", expression, token.line, token.column)
-        }
+        return StringTemplateExpression(segments, token.line, token.column)
     }
 
     private fun parseInterpolatedExpression(exprStr: String, line: Int, column: Int): Expression {

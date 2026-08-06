@@ -1,7 +1,7 @@
 package amber
 
-import amber.compiler.compilerConfig
 import amber.compiler.Transpiler
+import amber.compiler.compilerConfig
 import amber.compiler.diagnostic.DiagnosticSeverity
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -149,6 +149,23 @@ class Test {
         val errors = result.diagnostics.filter { it.severity == DiagnosticSeverity.ERROR }
         assertTrue(errors.isEmpty(), "expected no transpilation errors for list printing, got: $errors")
         assertTrue(result.code!!.contains("__amber_rt_println"), "code should contain __amber_rt_println function")
+    }
+
+    @Test
+    fun supportsStringTemplates() {
+        val source = $$"""
+            val name = "Amber"
+            val version = 1.0
+            val _s1 = "Hello $name"
+            val _s2 = "Version ${version + 0.1}"
+            val _s3 = "Escaped \$dollar"
+            val _s4 = "Complex: $name version ${version}"
+        """.trimIndent()
+
+        val result = transpile(source)
+
+        assertTrue(result.diagnostics.none { it.severity == DiagnosticSeverity.ERROR }, "expected no errors for string templates, got: ${result.diagnostics}")
+        assertTrue(result.code!!.contains("__amber_rt_str_concat"), "code should contain __amber_rt_str_concat")
     }
 
     @Test

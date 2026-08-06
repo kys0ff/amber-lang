@@ -14,6 +14,7 @@ import amber.compiler.ast.LiteralExpression
 import amber.compiler.ast.MemberAccessExpression
 import amber.compiler.ast.PanicExpression
 import amber.compiler.ast.ReturnStatement
+import amber.compiler.ast.StringTemplateExpression
 import amber.compiler.ast.UnaryExpression
 import amber.compiler.ast.VariableDeclaration
 import amber.compiler.symbol.Symbol
@@ -123,6 +124,9 @@ class ExpressionEmitter(
                     writer.write(".")
                     writer.write(expression.member.name)
                 }
+            }
+            is StringTemplateExpression -> {
+                emitStringTemplate(expression.segments)
             }
             is IsExpression -> {
                 val descriptor = when (expression.typeName) {
@@ -247,6 +251,43 @@ class ExpressionEmitter(
             writer.write(symbolEmitter.runtimeHelper(platformName))
         } else {
             writer.write(symbolEmitter.mangle(symbol.name, symbol.namespace))
+        }
+    }
+
+    private fun emitStringTemplate(segments: List<Expression>) {
+        if (segments.isEmpty()) {
+            writer.write("\"\"")
+            return
+        }
+        if (segments.size == 1) {
+            emitSegment(segments[0])
+            return
+        }
+        writer.write("__amber_rt_str_concat(")
+        emitSegment(segments[0])
+        writer.write(", ")
+        emitStringTemplate(segments.drop(1))
+        writer.write(")")
+    }
+
+    private fun emitSegment(expr: Expression) {
+        val type = expressionTypes[expr] ?: Type.Any
+        if (type == Type.String) {
+            emit(expr)
+        } else {
+            writer.write("__amber_rt_to_string(")
+            if (type == Type.Number) {
+                writer.write("__amber_rt_box_double(")
+                emit(expr)
+                writer.write(")")
+            } else if (type == Type.Boolean) {
+                writer.write("__amber_rt_box_bool(")
+                emit(expr)
+                writer.write(")")
+            } else {
+                emit(expr)
+            }
+            writer.write(")")
         }
     }
 }
