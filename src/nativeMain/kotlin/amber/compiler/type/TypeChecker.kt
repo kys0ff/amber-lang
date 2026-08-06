@@ -48,6 +48,7 @@ class TypeChecker(
     internal val resolvedSymbols = mutableMapOf<Expression, Symbol>()
     val errors = mutableListOf<Diagnostic>()
     private var currentFunctionReturnType: Type? = null
+    private var currentFunctionPropagatedUnsafe = false
     private val expectedReturnTypes = mutableListOf<Type>()
 
     private val typeResolver = TypeResolver(::reportError)
@@ -72,6 +73,21 @@ class TypeChecker(
 
     private fun reportError(node: AstNode, message: String, suggestion: String? = null) {
         errors.add(TypeError(currentFilePath, node.line, node.column, message, node.length, suggestion = suggestion))
+    }
+
+    private fun reportWarning(node: AstNode, message: String, suggestion: String? = null) {
+        errors.add(
+            GenericDiagnostic(
+                filePath = currentFilePath,
+                line = node.line,
+                column = node.column,
+                message = message,
+                type = "Warning",
+                length = node.length,
+                suggestion = suggestion,
+                severity = DiagnosticSeverity.WARNING
+            )
+        )
     }
 
     private fun defineSymbol(node: AstNode, symbol: Symbol) {
@@ -191,8 +207,19 @@ class TypeChecker(
             is ErrorNode -> Type.Error
         }
         expressionTypes[expression] = type
+
+        val isPropagating = currentFunctionReturnType is Type.Unsafe
         if (!allowUnsafe && type is Type.Unsafe) {
-            reportError(expression, "unhandled unsafe call", "handle it with 'or catch' or 'or panic'")
+            if (isPropagating) {
+                currentFunctionPropagatedUnsafe = true
+            } else {
+                val suggestion = if (currentFunctionReturnType != null) {
+                    "handle it with 'or catch' or 'or panic', or annotate the current function as unsafe '!'"
+                } else {
+                    "handle it with 'or catch' or 'or panic'"
+                }
+                reportError(expression, "unhandled unsafe call", suggestion)
+            }
         }
         return type
     }
@@ -206,7 +233,11 @@ class TypeChecker(
             reportError(declaration, "intrinsic variables are only allowed in the core standard library")
         }
         val declaredType = declaration.typeAnnotation?.let { typeResolver.resolveType(it, declaration, currentScope) }
-        var initializerType = declaration.initializer?.let { visitExpression(it) }
+        var initializerType = declaration.initializer?.let { visitExpression(it, allowUnsafe = declaredType is Type.Unsafe) }
+
+        if (declaredType is Type.Unsafe && initializerType != null && initializerType !is Type.Unsafe && initializerType != Type.Error) {
+            reportWarning(declaration, "useless '!': initializer is already safe (type $initializerType)")
+        }
 
         if (declaration.initializer is ArrayLiteralExpression && initializerType is Type.List) {
             initializerType = if (declaration.isMutable) {
@@ -607,11 +638,10 @@ class TypeChecker(
     private fun visitCatchExpression(catch: CatchExpression): Type {
         val targetType = visitExpression(catch.target, allowUnsafe = true)
         if (targetType !is Type.Unsafe && targetType != Type.Error) {
-            reportError(catch.target, "'or catch' can only be used on unsafe calls (type T!), but got $targetType")
-            return targetType
+            reportWarning(catch.target, "useless 'or catch': expression is already safe (type $targetType)")
         }
 
-        val innerType = if (targetType is Type.Unsafe) targetType.innerType else Type.Error
+        val innerType = if (targetType is Type.Unsafe) targetType.innerType else targetType
 
         currentScope = currentScope.enterScope()
         val errorVarType = catch.errorVarType?.let { typeResolver.resolveType(it, catch, currentScope) } ?: Type.String
@@ -723,6 +753,9 @@ class TypeChecker(
             function.returnTypeAnnotation?.let { typeResolver.resolveType(it, function, currentScope) } ?: Type.Unit
         val previousFunctionReturnType = currentFunctionReturnType
         currentFunctionReturnType = declaredReturnType
+        
+        val previousPropagated = currentFunctionPropagatedUnsafe
+        currentFunctionPropagatedUnsafe = false
 
         val paramTypes = mutableListOf<Type>()
         val hasDefaultValues = mutableListOf<Boolean>()
@@ -799,9 +832,15 @@ class TypeChecker(
                 )
             }
         }
+
+        if (declaredReturnType is Type.Unsafe && !currentFunctionPropagatedUnsafe && !function.isIntrinsic) {
+            reportWarning(function.name, "useless '!': function is safe and never returns an error")
+        }
+
         reportUnusedSymbols()
         currentScope = currentScope.exitScope()!!
         currentFunctionReturnType = previousFunctionReturnType
+        currentFunctionPropagatedUnsafe = previousPropagated
     }
 
     private fun visitReturnStatement(returnStmt: ReturnStatement) {

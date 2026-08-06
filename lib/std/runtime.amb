@@ -2,8 +2,8 @@
 
 ##
 # Terminates the program with the given exit code.
-intrinsic func exit(code: number)
+intrinsic func exit(code: num)
 
 ##
 # Terminates the program with an error message.
-intrinsic func panic(msg: string): nothing
+intrinsic func panic(msg: string)

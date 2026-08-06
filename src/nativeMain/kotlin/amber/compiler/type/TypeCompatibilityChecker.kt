@@ -48,8 +48,8 @@ class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, messag
                 } else {
                     errorReporter(
                         node,
-                        "invalid operands for '+': expected (num, num), (str, any), or (array_list<T>, T), got ($leftType, $rightType)",
-                        "use numbers for math, string for concatenation, or append to array_list"
+                        "invalid operands for '+': expected (num, num), (string, any), or (array_list<T>, T), got ($leftType, $rightType)",
+                        "use num for math, string for concatenation, or append to array_list"
                     )
                     Type.Error
                 }
@@ -61,8 +61,8 @@ class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, messag
                 } else {
                     errorReporter(
                         node,
-                        "operator '$operator' expects numbers, but got $leftType and $rightType",
-                        "ensure both operands evaluate to numbers"
+                        "operator '$operator' expects num, but got $leftType and $rightType",
+                        "ensure both operands evaluate to num"
                     )
                     Type.Error
                 }
@@ -87,8 +87,8 @@ class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, messag
                 } else {
                     errorReporter(
                         node,
-                        "operator '$operator' only works on numbers, got $leftType and $rightType",
-                        "convert operands to numbers before comparing"
+                        "operator '$operator' only works on num, got $leftType and $rightType",
+                        "convert operands to num before comparing"
                     )
                     Type.Error
                 }
@@ -100,8 +100,8 @@ class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, messag
                 } else {
                     errorReporter(
                         node,
-                        "logical operator '$operator' expects booleans, got $leftType and $rightType",
-                        "use boolean expressions for logical operations"
+                        "logical operator '$operator' expects bool, got $leftType and $rightType",
+                        "use bool expressions for logical operations"
                     )
                     Type.Error
                 }
@@ -129,8 +129,8 @@ class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, messag
                 } else {
                     errorReporter(
                         node,
-                        "negation expects a number, but got $operandType",
-                        "place '-' only before numeric values"
+                        "negation expects a num, but got $operandType",
+                        "place '-' only before num values"
                     )
                     Type.Error
                 }
@@ -142,8 +142,8 @@ class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, messag
                 } else {
                     errorReporter(
                         node,
-                        "logical NOT expects a boolean, but got $operandType",
-                        "place '!' only before boolean expressions"
+                        "logical NOT expects a bool, but got $operandType",
+                        "place '!' only before bool expressions"
                     )
                     Type.Error
                 }
@@ -165,7 +165,7 @@ class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, messag
         if (conditionType != Type.Boolean) {
             errorReporter(
                 node,
-                "$statementType condition must be boolean, but got $conditionType",
+                "$statementType condition must be bool, but got $conditionType",
                 "use an expression that evaluates to true or false"
             )
             return false

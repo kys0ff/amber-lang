@@ -79,6 +79,10 @@ class ExpressionEmitter(
                         writer.write("__amber_rt_box_double(")
                         emit(arg)
                         writer.write(")")
+                    } else if (paramType == Type.Any && argType == Type.Boolean) {
+                        writer.write("__amber_rt_box_bool(")
+                        emit(arg)
+                        writer.write(")")
                     } else {
                         emit(arg)
                     }
@@ -122,9 +126,9 @@ class ExpressionEmitter(
             }
             is IsExpression -> {
                 val descriptor = when (expression.typeName) {
-                    "Number" -> "&__amber_type_double"
-                    "String" -> "&__amber_type_string"
-                    "Boolean" -> "&__amber_type_bool"
+                    "num" -> "&__amber_type_double"
+                    "string" -> "&__amber_type_string"
+                    "bool" -> "&__amber_type_bool"
                     else -> "NULL"
                 }
                 writer.write("__amber_rt_is_type(")
@@ -150,6 +154,10 @@ class ExpressionEmitter(
             }
             is CatchExpression -> {
                 val targetType = expressionTypes[expression.target]
+                if (targetType !is Type.Unsafe && targetType != Type.Error) {
+                    emit(expression.target)
+                    return
+                }
                 val innerType = if (targetType is Type.Unsafe) targetType.innerType else Type.Any
                 val cInnerType = typeMapper.map(innerType)
                 

@@ -1,6 +1,31 @@
 package amber.compiler.parser
 
-import amber.compiler.ast.*
+import amber.compiler.ast.ArrayLiteralExpression
+import amber.compiler.ast.AssignmentExpression
+import amber.compiler.ast.BinaryExpression
+import amber.compiler.ast.BlockStatement
+import amber.compiler.ast.CallExpression
+import amber.compiler.ast.CatchExpression
+import amber.compiler.ast.EnumDeclaration
+import amber.compiler.ast.ErrorNode
+import amber.compiler.ast.Expression
+import amber.compiler.ast.ExpressionStatement
+import amber.compiler.ast.FunctionDeclaration
+import amber.compiler.ast.IdentifierExpression
+import amber.compiler.ast.IfStatement
+import amber.compiler.ast.ImportStatement
+import amber.compiler.ast.IndexAccessExpression
+import amber.compiler.ast.IsExpression
+import amber.compiler.ast.LiteralExpression
+import amber.compiler.ast.MemberAccessExpression
+import amber.compiler.ast.PanicExpression
+import amber.compiler.ast.Parameter
+import amber.compiler.ast.Program
+import amber.compiler.ast.ReturnStatement
+import amber.compiler.ast.Statement
+import amber.compiler.ast.UnaryExpression
+import amber.compiler.ast.VariableDeclaration
+import amber.compiler.ast.WhileStatement
 import amber.compiler.diagnostic.DiagnosticSeverity
 import amber.compiler.diagnostic.SyntaxError
 import amber.compiler.lexer.Lexer
@@ -39,23 +64,21 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
         errors.add(SyntaxError(filePath, line, column, finalMessage.lowercase()))
     }
 
-    private fun Token.value(): String {
-        return when (this) {
-            is Token.Identifier -> this.value
-            is Token.Keyword -> this.value
-            is Token.StringLiteral -> this.value
-            is Token.NumberLiteral -> this.value
-            is Token.BooleanLiteral -> this.value
-            is Token.NullLiteral -> this.value
-            is Token.Operator -> this.value
-            is Token.Separator -> this.value
-            is Token.Comment -> this.value
-            is Token.Whitespace -> this.value
-            is Token.Newline -> this.value
-            is Token.Unknown -> this.value
-            is Token.EOF -> "EOF"
-            is Token.CharLiteral -> this.value
-        }
+    private fun Token.value(): String = when (this) {
+        is Token.Identifier -> this.value
+        is Token.Keyword -> this.value
+        is Token.StringLiteral -> this.value
+        is Token.NumberLiteral -> this.value
+        is Token.BooleanLiteral -> this.value
+        is Token.NullLiteral -> this.value
+        is Token.Operator -> this.value
+        is Token.Separator -> this.value
+        is Token.Comment -> this.value
+        is Token.Whitespace -> this.value
+        is Token.Newline -> this.value
+        is Token.Unknown -> this.value
+        is Token.EOF -> "EOF"
+        is Token.CharLiteral -> this.value
     }
 
     private fun expectToken(expectedValue: String, errorMessage: String? = null): Token {

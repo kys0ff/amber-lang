@@ -3,9 +3,9 @@ package amber.compiler.type
 import amber.compiler.symbol.Symbol
 
 sealed interface Type {
-    object Number : Type { override fun toString() = "number" }
+    object Number : Type { override fun toString() = "num" }
     object String : Type { override fun toString() = "string" }
-    object Boolean : Type { override fun toString() = "boolean" }
+    object Boolean : Type { override fun toString() = "bool" }
     object Unit : Type { override fun toString() = "unit" }
     object Error : Type { override fun toString() = "error" }
     object Any : Type { override fun toString() = "any" }

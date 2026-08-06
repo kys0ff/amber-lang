@@ -41,12 +41,10 @@ class TypeResolver(private val errorReporter: (node: AstNode, message: String, s
             }
         }
         val builtinType = when (typeName) {
-            "number", "num", "Int" -> Type.Number
-            "string", "str" -> Type.String
-            "boolean", "bool" -> Type.Boolean
-            "unit" -> Type.Unit
+            "num" -> Type.Number
+            "string" -> Type.String
+            "bool" -> Type.Boolean
             "any" -> Type.Any
-            "char" -> Type.Char
             else -> null
         }
         if (builtinType != null) return builtinType

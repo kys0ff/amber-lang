@@ -111,7 +111,7 @@ class UnusedWarningTest {
     fun testUnusedParameterWarning() {
         val source = """
             use "core:io"
-            func foo(x: number) {
+            func foo(x: num) {
                 io.println("foo")
             }
             foo(10)
@@ -124,7 +124,7 @@ class UnusedWarningTest {
     @Test
     fun testUnusedReturnValueWarning() {
         val source = """
-            func foo(): number {
+            func foo(): num {
                 return 10
             }
             foo()
@@ -137,7 +137,7 @@ class UnusedWarningTest {
     @Test
     fun testUnusedReturnValueSuggestion() {
         val source = """
-            func foo(): number {
+            func foo(): num {
                 return 10
             }
             foo()

@@ -47,7 +47,7 @@ object StandardLibrary {
                     "print", listOf(Type.Any), Type.Unit, "print",
                     cImpl = """
                         void __amber_rt_print(const void* val) {
-                            if (val) printf("%s", (const char*)val);
+                            if (val) printf("%s", __amber_rt_to_string((void*)val));
                         }
                     """.trimIndent()
                 )
@@ -55,7 +55,7 @@ object StandardLibrary {
                     "println", listOf(Type.Any), Type.Unit, "println",
                     cImpl = """
                         void __amber_rt_println(const void* val) {
-                            if (val) printf("%s\n", (const char*)val);
+                            if (val) printf("%s\n", __amber_rt_to_string((void*)val));
                             else printf("\n");
                         }
                     """.trimIndent()
@@ -90,9 +90,9 @@ object StandardLibrary {
                     "to_string", listOf(Type.Any), Type.String, "to_string"
                 )
                 func(
-                    "from_number", listOf(Type.Number), Type.String, "from_number",
+                    "from_num", listOf(Type.Number), Type.String, "from_num",
                     cImpl = """
-                        char* __amber_rt_from_number(double n) {
+                        char* __amber_rt_from_num(double n) {
                             char* buf = (char*)__amber_rt_alloc(64);
                             snprintf(buf, 64, "%g", n);
                             return buf;
@@ -141,7 +141,7 @@ object StandardLibrary {
             module("std.runtime") {
                 func("exit", listOf(Type.Number), Type.Unit, "exit",
                     cImpl = "void __amber_rt_exit(double code) { exit((int)code); }")
-                func("panic", listOf(Type.String), Type.Nothing, "panic",
+                func("panic", listOf(Type.String), Type.Unit, "panic",
                     cImpl = """
                         void __amber_rt_panic(const char* msg) {
                             fprintf(stderr, "panic: %s\n", msg);
@@ -192,6 +192,14 @@ object StandardLibrary {
                 "to_string", listOf(Type.Any), Type.String, "to_string",
                 cImpl = """
                     char* __amber_rt_to_string(void* val) {
+                        if (!val) return "null";
+                        __amber_header_t* h = (__amber_header_t*)val;
+                        if (h->type == &__amber_type_double) {
+                            return __amber_rt_from_num(__amber_rt_unbox_double(val));
+                        }
+                        if (h->type == &__amber_type_bool) {
+                            return __amber_rt_unbox_bool(val) ? "true" : "false";
+                        }
                         return (char*)val;
                     }
                 """.trimIndent()

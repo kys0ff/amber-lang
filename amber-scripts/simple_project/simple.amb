@@ -1,5 +1,10 @@
 use "core:io"
 
-io.println("Hi")
+func safe():num! {
+    5
+}
 
-echo("Hi")
+io.println(safe() or catch(_) { 5 })
+io.println(true)
+io.println(false)
+io.println("Hello Amber")

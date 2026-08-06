@@ -5,37 +5,37 @@
 val pi = 3.141592653589793
 
 ##
-# Returns the absolute value of a number.
-intrinsic func abs(n: number): number
+# Returns the absolute value of a num.
+intrinsic func abs(n: num): num
 
 ##
-# Returns the square root of a number.
-intrinsic func sqrt(n: number): number
+# Returns the square root of a num.
+intrinsic func sqrt(n: num): num
 
 ##
 # Returns the value of a base raised to a power.
-intrinsic func pow(base: number, exp: number): number
+intrinsic func pow(base: num, exp: num): num
 
 ##
-# Returns the sine of a number (in radians).
-intrinsic func sin(n: number): number
+# Returns the sine of a num (in radians).
+intrinsic func sin(n: num): num
 
 ##
-# Returns the cosine of a number (in radians).
-intrinsic func cos(n: number): number
+# Returns the cosine of a num (in radians).
+intrinsic func cos(n: num): num
 
 ##
-# Returns the largest integer less than or equal to a number.
-intrinsic func floor(n: number): number
+# Returns the largest integer less than or equal to a num.
+intrinsic func floor(n: num): num
 
 ##
-# Returns the smallest integer greater than or equal to a number.
-intrinsic func ceil(n: number): number
+# Returns the smallest integer greater than or equal to a num.
+intrinsic func ceil(n: num): num
 
 ##
-# Returns the greater of two numbers.
-intrinsic func max(a: number, b: number): number
+# Returns the greater of two nums.
+intrinsic func max(a: num, b: num): num
 
 ##
-# Returns the smaller of two numbers.
-intrinsic func min(a: number, b: number): number
+# Returns the smaller of two nums.
+intrinsic func min(a: num, b: num): num

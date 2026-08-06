@@ -70,7 +70,7 @@ class IntrinsicTest {
     @Test
     fun testIntrinsicVariableOutsideStdLibFails() {
         val source = """
-            intrinsic val my_const: number = 10
+            intrinsic val my_const: num = 10
         """.trimIndent()
 
         val result = transpile(source, "/tmp/test.amb")

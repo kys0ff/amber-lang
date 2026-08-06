@@ -48,6 +48,15 @@ class RuntimeEmitter(
         writer.writeLine("} __amber_box_double_t;")
         writer.writeLine()
 
+        // Boxed Bool
+        writer.writeLine("typedef struct {")
+        writer.indent()
+        writer.writeLine("__amber_header_t header;")
+        writer.writeLine("int value;")
+        writer.dedent()
+        writer.writeLine("} __amber_box_bool_t;")
+        writer.writeLine()
+
         // List/Array type
         writer.writeLine("typedef struct {")
         writer.indent()
@@ -76,6 +85,8 @@ class RuntimeEmitter(
         writer.writeLine("extern __amber_type_t __amber_type_double;")
         writer.writeLine("extern __amber_type_t __amber_type_string;")
         writer.writeLine("extern __amber_type_t __amber_type_bool;")
+        writer.writeLine()
+        writer.writeLine("char* __amber_rt_to_string(void* val);")
         writer.writeLine()
     }
 
@@ -110,8 +121,19 @@ class RuntimeEmitter(
 
             static inline double __amber_rt_unbox_double(void* p) {
                 if (!p) return 0.0;
-                // Basic safety check could be added here
                 return ((__amber_box_double_t*)p)->value;
+            }
+
+            static inline void* __amber_rt_box_bool(int b) {
+                __amber_box_bool_t* p = (__amber_box_bool_t*)__amber_rt_alloc(sizeof(__amber_box_bool_t));
+                p->header.type = &__amber_type_bool;
+                p->value = b;
+                return p;
+            }
+
+            static inline int __amber_rt_unbox_bool(void* p) {
+                if (!p) return 0;
+                return ((__amber_box_bool_t*)p)->value;
             }
             
             static inline int __amber_rt_is_error(struct AMBER_RESULT res) {
@@ -147,9 +169,9 @@ class RuntimeEmitter(
     }
 
     fun emitDefinitions() {
-        writer.writeLine("__amber_type_t __amber_type_double = { \"Number\", 1 };")
-        writer.writeLine("__amber_type_t __amber_type_string = { \"String\", 2 };")
-        writer.writeLine("__amber_type_t __amber_type_bool = { \"Boolean\", 3 };")
+        writer.writeLine("__amber_type_t __amber_type_double = { \"num\", 1 };")
+        writer.writeLine("__amber_type_t __amber_type_string = { \"string\", 2 };")
+        writer.writeLine("__amber_type_t __amber_type_bool = { \"bool\", 3 };")
         writer.writeLine()
     }
 }
