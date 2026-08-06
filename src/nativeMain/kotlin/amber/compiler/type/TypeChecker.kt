@@ -76,7 +76,16 @@ class TypeChecker(
 
     private fun reportError(node: AstNode, message: String, suggestion: String? = null) {
         if (isQuietMode) return
-        errors.add(TypeError(currentFilePath, node.line, node.column, message, node.length, suggestion = suggestion))
+        errors.add(
+            TypeError(
+                currentFilePath,
+                node.line,
+                node.column,
+                message,
+                node.length,
+                suggestion = suggestion
+            )
+        )
     }
 
     private fun reportWarning(node: AstNode, message: String, suggestion: String? = null) {
@@ -151,7 +160,9 @@ class TypeChecker(
 
     private fun calculateNamespace(importPath: String): String? {
         return when {
-            importPath.startsWith("core:") -> "std." + importPath.removePrefix("core:").replace(":", ".")
+            importPath.startsWith("core:") -> "std." + importPath.removePrefix("core:")
+                .replace(":", ".")
+
             importPath.startsWith("local:") -> importPath.removePrefix("local:").replace(":", ".")
             importPath.startsWith("pkg:") -> importPath.removePrefix("pkg:").replace(":", ".")
             else -> null
@@ -171,7 +182,8 @@ class TypeChecker(
         }
 
         // Pass 2: Infer return types for all functions
-        program.statements.filterIsInstance<FunctionDeclaration>().forEach { inferFunctionReturnType(it) }
+        program.statements.filterIsInstance<FunctionDeclaration>()
+            .forEach { inferFunctionReturnType(it) }
 
         // Pass 3: Full semantic analysis and error reporting
         program.statements.forEach {
@@ -191,10 +203,10 @@ class TypeChecker(
 
     private fun inferFunctionReturnType(function: FunctionDeclaration) {
         if (function.isIntrinsic || function.returnTypeAnnotation != null) return
-        
+
         val functionSymbol = currentScope.resolve(function.name.name) ?: return
         val paramTypes = (functionSymbol.type as Type.Function).parameterTypes
-        
+
         val inferenceScope = currentScope.enterScope()
         function.parameters.forEachIndexed { index, param ->
             inferenceScope.define(
@@ -203,30 +215,36 @@ class TypeChecker(
                     paramTypes[index],
                     isMutable = true,
                     isParameter = true,
+                    isInitialized = true,
                     line = param.name.line,
                     column = param.name.column
                 )
             )
         }
-        
+
         val originalScope = currentScope
         currentScope = inferenceScope
-        
+
         val wasQuiet = isQuietMode
         isQuietMode = true
-        
+
         // Quietly visit the body to infer return type
         val inferredType = function.body?.let { body ->
-            val lastStmt = body.statements.lastOrNull()
-            if (lastStmt is ExpressionStatement) {
-                visitExpression(lastStmt.expression, allowUnsafe = true)
-            } else if (lastStmt is ReturnStatement) {
-                lastStmt.value?.let { visitExpression(it, allowUnsafe = true) } ?: Type.Unit
-            } else {
-                Type.Unit
+            when (val lastStmt = body.statements.lastOrNull()) {
+                is ExpressionStatement -> visitExpression(lastStmt.expression, allowUnsafe = true)
+
+                is ReturnStatement -> lastStmt.value?.let {
+                    visitExpression(
+                        expression = it,
+                        allowUnsafe = true
+                    )
+                } ?: Type.Unit
+
+                else ->
+                    Type.Unit
             }
         } ?: Type.Unit
-        
+
         isQuietMode = wasQuiet
         currentScope = originalScope
         functionSymbol.type = (functionSymbol.type as Type.Function).copy(returnType = inferredType)
@@ -234,7 +252,8 @@ class TypeChecker(
 
     private fun preRegisterFunction(function: FunctionDeclaration) {
         val paramTypes = function.parameters.map { param ->
-            param.typeAnnotation?.let { typeResolver.resolveType(it, param, currentScope) } ?: Type.Any
+            param.typeAnnotation?.let { typeResolver.resolveType(it, param, currentScope) }
+                ?: Type.Any
         }
         val hasDefaultValues = function.parameters.map { it.defaultValue != null }
         val declaredReturnType = function.returnTypeAnnotation?.let {
@@ -315,13 +334,30 @@ class TypeChecker(
 
     private fun visitVariableDeclaration(declaration: VariableDeclaration) {
         if (declaration.isIntrinsic && !isStandardLibraryFile(currentFilePath)) {
-            reportError(declaration, "intrinsic variables are only allowed in the core standard library")
+            reportError(
+                declaration,
+                "intrinsic variables are only allowed in the core standard library"
+            )
         }
-        val declaredType = declaration.typeAnnotation?.let { typeResolver.resolveType(it, declaration, currentScope) }
-        var initializerType = declaration.initializer?.let { visitExpression(it, allowUnsafe = declaredType is Type.Unsafe) }
+        val declaredType = declaration.typeAnnotation?.let {
+            typeResolver.resolveType(
+                it,
+                declaration,
+                currentScope
+            )
+        }
+        var initializerType = declaration.initializer?.let {
+            visitExpression(
+                it,
+                allowUnsafe = declaredType is Type.Unsafe
+            )
+        }
 
         if (declaredType is Type.Unsafe && initializerType != null && initializerType !is Type.Unsafe && initializerType != Type.Error) {
-            reportWarning(declaration, "useless '!': initializer is already safe (type $initializerType)")
+            reportWarning(
+                declaration,
+                "useless '!': initializer is already safe (type $initializerType)"
+            )
         }
 
         if (initializerType is Type.List && (declaration.isMutable || declaration.initializer is ArrayLiteralExpression)) {
@@ -360,6 +396,7 @@ class TypeChecker(
             finalType,
             declaration.isMutable,
             isIntrinsic = declaration.isIntrinsic,
+            isInitialized = declaration.initializer != null || declaration.isIntrinsic,
             line = declaration.name.line,
             column = declaration.name.column,
             namespace = namespace
@@ -367,7 +404,10 @@ class TypeChecker(
         defineSymbol(declaration.name, symbol)
     }
 
-    private fun visitExpressionStatement(statement: ExpressionStatement, skipUnusedWarning: Boolean = false) {
+    private fun visitExpressionStatement(
+        statement: ExpressionStatement,
+        skipUnusedWarning: Boolean = false
+    ) {
         val type = visitExpression(statement.expression)
         if (!skipUnusedWarning && statement.expression !is AssignmentExpression && type != Type.Unit && type != Type.Error && type !is Type.Unsafe && type != Type.Any && type != Type.Nothing) {
             errors.add(
@@ -408,13 +448,24 @@ class TypeChecker(
     private fun visitIdentifierExpression(identifier: IdentifierExpression): Type {
         val symbol = currentScope.resolve(identifier.name)
         if (symbol != null) {
-            if (symbol.name == "to_string" && symbol.isIntrinsic && !isStandardLibraryFile(currentFilePath) && identifier.name == "to_string" && !identifier.isSynthetic) {
+            if (symbol.name == "to_string" && symbol.isIntrinsic && !isStandardLibraryFile(
+                    currentFilePath
+                ) && identifier.name == "to_string" && !identifier.isSynthetic
+            ) {
                 reportError(
                     identifier,
                     "direct use of 'to_string' is not allowed",
                     "import 'core:str' and use 'str.to_string(value)' instead"
                 )
             }
+
+            if (!symbol.isInitialized && !symbol.isIntrinsic && symbol.type !is Type.Function && symbol.type !is Type.Module && symbol.type !is Type.EnumNamespace && symbol.type !is Type.Enum) {
+                reportError(
+                    identifier,
+                    "variable '${identifier.name}' might not have been initialized"
+                )
+            }
+
             resolvedSymbols[identifier] = symbol
             return symbol.type
         } else {
@@ -449,7 +500,8 @@ class TypeChecker(
 
         if (binary.operator == "+") {
             if ((leftType == Type.String && rightType == Type.Number) ||
-                (leftType == Type.Number && rightType == Type.String)) {
+                (leftType == Type.Number && rightType == Type.String)
+            ) {
                 reportError(
                     binary,
                     "operator '+' cannot be applied to types '$leftType' and '$rightType'",
@@ -485,12 +537,21 @@ class TypeChecker(
             }
         }
 
-        return typeCompatibilityChecker.checkBinaryOperatorCompatibility(leftType, binary.operator, rightType, binary)
+        return typeCompatibilityChecker.checkBinaryOperatorCompatibility(
+            leftType,
+            binary.operator,
+            rightType,
+            binary
+        )
     }
 
     private fun visitUnaryExpression(unary: UnaryExpression): Type {
         val operandType = visitExpression(unary.operand)
-        return typeCompatibilityChecker.checkUnaryOperatorCompatibility(unary.operator, operandType, unary)
+        return typeCompatibilityChecker.checkUnaryOperatorCompatibility(
+            unary.operator,
+            operandType,
+            unary
+        )
     }
 
     private fun visitIsExpression(isExpr: IsExpression): Type {
@@ -517,19 +578,24 @@ class TypeChecker(
 
         val argTypes = call.arguments.map { visitExpression(it) }
         val isArgMutable = call.arguments.map { isExpressionMutable(it) }
-        
+
         if (isValidArgumentCount(calleeType, argTypes.size)) {
             calleeType = inferFunctionTypeFromFirstCall(functionSymbol, calleeType, argTypes)
         }
-        
+
         // Mark arguments as mutated if the callee mutates them
         call.arguments.forEachIndexed { i, arg ->
             if (calleeType.isParameterMutated.getOrElse(i) { false }) {
                 markAsMutated(arg)
             }
         }
-        
-        typeCompatibilityChecker.checkFunctionCallArguments(call, calleeType, argTypes, isArgMutable)
+
+        typeCompatibilityChecker.checkFunctionCallArguments(
+            call,
+            calleeType,
+            argTypes,
+            isArgMutable
+        )
 
         return calleeType.returnType
     }
@@ -540,21 +606,24 @@ class TypeChecker(
                 val symbol = currentScope.resolve(expression.name)
                 symbol?.isMutated = true
             }
+
             is IndexAccessExpression -> markAsMutated(expression.target)
             is MemberAccessExpression -> markAsMutated(expression.target)
             is ArrayLiteralExpression -> {
                 expression.elements.forEach { markAsMutated(it) }
             }
+
             else -> {}
         }
     }
-    
+
     private fun isExpressionMutable(expression: Expression): Boolean {
         return when (expression) {
             is IdentifierExpression -> {
                 val symbol = currentScope.resolve(expression.name)
                 symbol?.isMutable ?: false
             }
+
             is IndexAccessExpression -> isExpressionMutable(expression.target)
             is MemberAccessExpression -> isExpressionMutable(expression.target)
             else -> false
@@ -569,7 +638,8 @@ class TypeChecker(
     }
 
     private fun isValidArgumentCount(functionType: Type.Function, argCount: Int): Boolean {
-        val minArgs = functionType.parameterTypes.zip(functionType.hasDefaultValues).count { (_, hasDefault) -> !hasDefault }
+        val minArgs = functionType.parameterTypes.zip(functionType.hasDefaultValues)
+            .count { (_, hasDefault) -> !hasDefault }
         val maxArgs = functionType.parameterTypes.size
         return argCount in minArgs..maxArgs
     }
@@ -630,7 +700,8 @@ class TypeChecker(
             return Type.Error
         }
 
-        val isTargetCollection = targetSymbol.type is Type.List || targetSymbol.type is Type.ArrayList
+        val isTargetCollection =
+            targetSymbol.type is Type.List || targetSymbol.type is Type.ArrayList
         val valueExpression = assignment.value
 
         if (isTargetCollection && valueExpression is BinaryExpression && valueExpression.operator == "+") {
@@ -660,6 +731,7 @@ class TypeChecker(
         }
 
         val valueType = visitExpression(assignment.value)
+        targetSymbol.isInitialized = true
         typeCompatibilityChecker.checkAssignmentCompatibility(
             targetSymbol.type,
             valueType,
@@ -764,7 +836,11 @@ class TypeChecker(
         panic.message?.let {
             val messageType = visitExpression(it)
             if (messageType != Type.String && messageType != Type.Error) {
-                reportError(it, "panic message must be a string, but got $messageType", "ensure the expression evaluates to a string")
+                reportError(
+                    it,
+                    "panic message must be a string, but got $messageType",
+                    "ensure the expression evaluates to a string"
+                )
             }
         }
         return Type.Nothing
@@ -773,22 +849,35 @@ class TypeChecker(
     private fun visitCatchExpression(catch: CatchExpression): Type {
         val targetType = visitExpression(catch.target, allowUnsafe = true)
         if (targetType !is Type.Unsafe && targetType != Type.Error) {
-            reportWarning(catch.target, "useless 'or catch': expression is already safe (type $targetType)")
+            reportWarning(
+                catch.target,
+                "useless 'or catch': expression is already safe (type $targetType)"
+            )
         }
 
         val innerType = if (targetType is Type.Unsafe) targetType.innerType else targetType
 
         currentScope = currentScope.enterScope()
-        val errorVarType = catch.errorVarType?.let { typeResolver.resolveType(it, catch, currentScope) } ?: Type.String
+        val errorVarType =
+            catch.errorVarType?.let { typeResolver.resolveType(it, catch, currentScope) }
+                ?: Type.String
         if (errorVarType != Type.String && errorVarType != Type.Error && errorVarType != Type.Any) {
             reportError(catch, "catch variable must be of type string, but got $errorVarType")
         }
-        defineSymbol(catch, Symbol(catch.errorVarName, errorVarType, line = catch.line, column = catch.column))
-        
-        visitBlockStatement(catch.body, isExpression = true, expectedReturnType = innerType, contextName = "catch block")
-        
+        defineSymbol(
+            catch,
+            Symbol(catch.errorVarName, errorVarType, line = catch.line, column = catch.column)
+        )
+
+        visitBlockStatement(
+            catch.body,
+            isExpression = true,
+            expectedReturnType = innerType,
+            contextName = "catch block"
+        )
+
         currentScope = currentScope.exitScope()!!
-        
+
         return innerType
     }
 
@@ -857,13 +946,18 @@ class TypeChecker(
 
     private fun visitWhileStatement(whileStmt: WhileStatement) {
         val conditionType = visitExpression(whileStmt.condition)
-        typeCompatibilityChecker.checkConditionType(conditionType, whileStmt.condition, "while statement")
+        typeCompatibilityChecker.checkConditionType(
+            conditionType,
+            whileStmt.condition,
+            "while statement"
+        )
 
         visitBlockStatement(whileStmt.body)
     }
 
     private fun visitEnumDeclaration(declaration: EnumDeclaration) {
-        val enumType = Type.Enum(declaration.name.name, declaration.variants.map { it.name }, namespace)
+        val enumType =
+            Type.Enum(declaration.name.name, declaration.variants.map { it.name }, namespace)
         val namespaceType = Type.EnumNamespace(enumType)
         val symbol = Symbol(
             declaration.name.name,
@@ -880,7 +974,10 @@ class TypeChecker(
     private fun visitFunctionDeclaration(function: FunctionDeclaration) {
         if (function.isIntrinsic) {
             if (!isStandardLibraryFile(currentFilePath)) {
-                reportError(function, "intrinsic functions are only allowed in the core standard library")
+                reportError(
+                    function,
+                    "intrinsic functions are only allowed in the core standard library"
+                )
             }
             if (function.body != null) {
                 reportError(function, "intrinsic functions cannot have a body")
@@ -892,7 +989,8 @@ class TypeChecker(
         val inferableParameterIndices = mutableSetOf<Int>()
 
         function.parameters.forEachIndexed { index, param ->
-            val paramDeclaredType = param.typeAnnotation?.let { typeResolver.resolveType(it, param, currentScope) }
+            val paramDeclaredType =
+                param.typeAnnotation?.let { typeResolver.resolveType(it, param, currentScope) }
             val tempScopeForDefaultValue = currentScope.enterScope()
             val originalScope = currentScope
             currentScope = tempScopeForDefaultValue
@@ -942,6 +1040,7 @@ class TypeChecker(
                         paramTypes[index],
                         isMutable = true,
                         isParameter = true,
+                        isInitialized = true,
                         line = param.name.line,
                         column = param.name.column
                     )
@@ -950,8 +1049,10 @@ class TypeChecker(
             val originalScope = currentScope
             currentScope = inferenceScope
             val lastStmt = function.body.statements[0]
-            val firstExpr = if (lastStmt is ExpressionStatement) lastStmt.expression else (lastStmt as ReturnStatement).value
-            inferredReturnType = firstExpr?.let { visitExpression(it, allowUnsafe = true) } ?: Type.Unit
+            val firstExpr =
+                if (lastStmt is ExpressionStatement) lastStmt.expression else (lastStmt as ReturnStatement).value
+            inferredReturnType =
+                firstExpr?.let { visitExpression(it, allowUnsafe = true) } ?: Type.Unit
             currentScope = originalScope
         }
 
@@ -966,9 +1067,10 @@ class TypeChecker(
         currentFunctionPropagatedUnsafe = false
 
         var functionType = Type.Function(paramTypes, hasDefaultValues, declaredReturnType)
-        
+
         if (function.isIntrinsic) {
-            val qualifiedName = if (namespace != null) "$namespace.${function.name.name}" else function.name.name
+            val qualifiedName =
+                if (namespace != null) "$namespace.${function.name.name}" else function.name.name
             val intrinsic = runtimeProvider.getAllIntrinsicSymbols()[qualifiedName]
             if (intrinsic != null && intrinsic.type is Type.Function) {
                 functionType = functionType.copy(
@@ -976,7 +1078,7 @@ class TypeChecker(
                 )
             }
         }
-        
+
         val existingSymbol = currentScope.resolve(function.name.name)
         val functionSymbol: Symbol
         if (existingSymbol != null && existingSymbol.line == function.name.line && existingSymbol.column == function.name.column) {
@@ -1005,6 +1107,7 @@ class TypeChecker(
                 paramType,
                 isMutable = true, // Allow modification inside function
                 isParameter = true,
+                isInitialized = true,
                 line = param.name.line,
                 column = param.name.column
             )
@@ -1014,7 +1117,12 @@ class TypeChecker(
         }
 
         function.body?.let {
-            visitBlockStatement(it, isExpression = true, expectedReturnType = declaredReturnType, contextName = "function '${function.name.name}'")
+            visitBlockStatement(
+                it,
+                isExpression = true,
+                expectedReturnType = declaredReturnType,
+                contextName = "function '${function.name.name}'"
+            )
             if (declaredReturnType != Type.Unit && !definitelyReturns(it)) {
                 reportError(
                     function.name,
@@ -1023,11 +1131,12 @@ class TypeChecker(
                 )
             }
         }
-        
+
         // Update function type with mutation info inferred from body
         if (!function.isIntrinsic) {
             val mutationInfo = paramSymbols.map { it.isMutated }
-            functionSymbol.type = (functionSymbol.type as Type.Function).copy(isParameterMutated = mutationInfo)
+            functionSymbol.type =
+                (functionSymbol.type as Type.Function).copy(isParameterMutated = mutationInfo)
         }
 
         if (declaredReturnType is Type.Unsafe && !currentFunctionPropagatedUnsafe && !function.isIntrinsic) {
@@ -1058,7 +1167,8 @@ class TypeChecker(
 
     fun visitImportStatement(importStmt: ImportStatement) {
         val alias = importStmt.asName?.name
-        val moduleIdentifierName = alias ?: importStmt.path.split(":").last().substringBeforeLast(".amb")
+        val moduleIdentifierName =
+            alias ?: importStmt.path.split(":").last().substringBeforeLast(".amb")
 
         if (currentScope.resolve(moduleIdentifierName) != null) {
             reportError(
@@ -1083,9 +1193,10 @@ class TypeChecker(
                 return
             }
 
-            val importedFilePath = importResolver.resolveAbsolutePath(importStmt.path, currentFilePath)
+            val importedFilePath =
+                importResolver.resolveAbsolutePath(importStmt.path, currentFilePath)
             val importedNamespace = calculateNamespace(importStmt.path)
-            
+
             val importedTypeChecker = TypeChecker(
                 config,
                 importedFilePath,
@@ -1137,11 +1248,13 @@ class TypeChecker(
                     statement.statements.any { definitelyReturns(it) }
                 }
             }
+
             is IfStatement -> {
                 val thenReturns = definitelyReturns(statement.thenBranch)
                 val elseReturns = statement.elseBranch?.let { definitelyReturns(it) } ?: false
                 thenReturns && elseReturns
             }
+
             else -> false
         }
     }
