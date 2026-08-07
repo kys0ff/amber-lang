@@ -6,7 +6,8 @@ import amber.compiler.ast.CallExpression
 class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, message: String, suggestion: String?) -> Unit) {
 
     fun isCompatible(target: Type, value: Type): Boolean {
-        if (target == Type.Any || value == Type.Any || value == Type.Error || value == Type.Nothing) return true
+        if (target == Type.Any) return value != Type.Unit
+        if (value == Type.Any || value == Type.Error || value == Type.Nothing) return true
         if (target == value) return true
 
         if (target is Type.Unsafe && value == target.innerType) return true
@@ -59,7 +60,16 @@ class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, messag
                     (isCompatible((leftType as? Type.ArrayList)?.elementType ?: (leftType as Type.List).elementType, rightType))) {
                     leftType
                 } else if (leftType == Type.String || rightType == Type.String) {
-                    Type.String
+                    if (leftType == Type.Unit || rightType == Type.Unit) {
+                        errorReporter(
+                            node,
+                            "invalid operands for '+': expected (string, any), but got unit",
+                            "ensure the expression returns a value, as assignment evaluates to unit"
+                        )
+                        Type.Error
+                    } else {
+                        Type.String
+                    }
                 } else if (leftType == Type.Number && rightType == Type.Number) {
                     Type.Number
                 } else {

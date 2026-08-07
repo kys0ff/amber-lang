@@ -634,10 +634,10 @@ class TypeChecker(
             }
         } else {
             val existing = currentScope.resolveLocal(declaration.name.name)
-            if (existing != null && existing.line == declaration.name.line && existing.column == declaration.name.column && existing.type == Type.Any && !existing.isExplicitlyTyped) {
-                finalType = Type.Any
+            finalType = if (existing != null && existing.line == declaration.name.line && existing.column == declaration.name.column && existing.type == Type.Any && !existing.isExplicitlyTyped) {
+                Type.Any
             } else {
-                finalType = initializerType ?: Type.Error
+                initializerType ?: Type.Error
             }
             if (finalType == Type.Error) {
                 reportError(
@@ -970,21 +970,6 @@ class TypeChecker(
             markAsMutated(target)
         }
 
-        val isTargetCollection = targetType is Type.List || targetType is Type.ArrayList
-        val valueExpression = assignment.value
-
-        if (isTargetCollection && valueExpression is BinaryExpression && valueExpression.operator == "+") {
-            // Simplified check for += on collections
-            val leftTarget = valueExpression.left
-            if (leftTarget == target) {
-                reportError(
-                    assignment,
-                    "operator '+=' is not supported for array or list updates",
-                    "use '+' concatenation and explicitly reassign"
-                )
-            }
-        }
-
         val updateOperator = detectIncDecOperator(assignment)
         if (
             updateOperator != null &&
@@ -1006,7 +991,7 @@ class TypeChecker(
             assignment,
             "target"
         )
-        return valueType
+        return Type.Unit
     }
 
     private fun detectIncDecOperator(assignment: AssignmentExpression): String? {
