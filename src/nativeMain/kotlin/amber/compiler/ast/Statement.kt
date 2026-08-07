@@ -66,6 +66,33 @@ class WhileStatement(
     override val children: List<AstNode> get() = listOf(condition, body)
 }
 
+class ForStatement(
+    val itemName: IdentifierExpression,
+    val itemTypeAnnotation: String?,
+    val indexName: IdentifierExpression?,
+    val indexTypeAnnotation: String?,
+    val iterable: Expression,
+    val body: BlockStatement,
+    line: Int = -1,
+    column: Int = -1,
+) : Statement(line, column) {
+    override val children: List<AstNode> get() = listOfNotNull(itemName, indexName, iterable, body)
+}
+
+class BreakStatement(
+    line: Int = -1,
+    column: Int = -1
+) : Statement(line, column) {
+    override val children: List<AstNode> get() = emptyList()
+}
+
+class ContinueStatement(
+    line: Int = -1,
+    column: Int = -1
+) : Statement(line, column) {
+    override val children: List<AstNode> get() = emptyList()
+}
+
 class ReturnStatement(
     val value: Expression?,
     line: Int = -1,

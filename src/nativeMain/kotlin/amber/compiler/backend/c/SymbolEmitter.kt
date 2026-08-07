@@ -11,5 +11,9 @@ class SymbolEmitter(private val userPrefix: String = "__am_") {
 
     fun nextTemp(): String = "${userPrefix}tmp_${tempCounter++}"
 
+    fun mangleStruct(name: String, moduleNamespace: String? = null): String {
+        return "struct_" + mangle(name, moduleNamespace)
+    }
+
     fun runtimeHelper(name: String): String = "__amber_rt_$name"
 }

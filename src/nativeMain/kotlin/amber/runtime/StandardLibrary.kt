@@ -89,6 +89,30 @@ object StandardLibrary {
                     """.trimIndent()
                 )
                 func(
+                    "get", listOf(Type.String, Type.Number), Type.Char, "str_get",
+                    cImpl = """
+                        char __amber_rt_str_get(const char* s, double idx) {
+                            int i = (int)idx;
+                            if (!s || i < 0 || i >= (int)strlen(s)) {
+                                __amber_rt_panic("string index out of bounds");
+                            }
+                            return s[i];
+                        }
+                    """.trimIndent()
+                )
+                func(
+                    "get_or_err", listOf(Type.String, Type.Number), Type.Unsafe(Type.Char), "str_get_or_err",
+                    cImpl = """
+                        struct AMBER_RESULT __amber_rt_str_get_or_err(const char* s, double idx) {
+                            int i = (int)idx;
+                            if (!s || i < 0 || i >= (int)strlen(s)) {
+                                return __amber_rt_result_error("string index out of bounds");
+                            }
+                            return __amber_rt_result_success(__amber_rt_box_char(s[i]));
+                        }
+                    """.trimIndent()
+                )
+                func(
                     "to_string", listOf(Type.Any), Type.String, "to_string"
                 )
                 func(
@@ -156,6 +180,28 @@ object StandardLibrary {
             module("std.list") {
                 func("len", listOf(Type.List(Type.Any)), Type.Number, "list_len",
                     cImpl = "double __amber_rt_list_len(__amber_list_t* l) { return l ? (double)l->length : 0.0; }")
+
+                func("get", listOf(Type.List(Type.Any), Type.Number), Type.Any, "list_get",
+                    cImpl = """
+                        void* __amber_rt_list_get(__amber_list_t* l, double idx) {
+                            int i = (int)idx;
+                            if (!l || i < 0 || i >= l->length) {
+                                __amber_rt_panic("index out of bounds");
+                            }
+                            return l->data[i];
+                        }
+                    """.trimIndent())
+
+                func("get_or_err", listOf(Type.List(Type.Any), Type.Number), Type.Unsafe(Type.Any), "list_get_or_err",
+                    cImpl = """
+                        struct AMBER_RESULT __amber_rt_list_get_or_err(__amber_list_t* l, double idx) {
+                            int i = (int)idx;
+                            if (!l || i < 0 || i >= l->length) {
+                                return __amber_rt_result_error("index out of bounds");
+                            }
+                            return __amber_rt_result_success(l->data[i]);
+                        }
+                    """.trimIndent())
                 
                 func("push", listOf(Type.List(Type.Any), Type.Any), Type.Unit, "list_push",
                     isMutated = listOf(true, false),
@@ -179,15 +225,6 @@ object StandardLibrary {
                         }
                     """.trimIndent())
                 
-                func("get", listOf(Type.List(Type.Any), Type.Number), Type.Any, "list_get",
-                    cImpl = """
-                        void* __amber_rt_list_get(__amber_list_t* l, double idx) {
-                            int i = (int)idx;
-                            if (!l || i < 0 || i >= l->length) return NULL;
-                            return l->data[i];
-                        }
-                    """.trimIndent())
-                
                 func("set", listOf(Type.List(Type.Any), Type.Number, Type.Any), Type.Unit, "list_set",
                     isMutated = listOf(true, false, false),
                     cImpl = """
@@ -208,6 +245,12 @@ object StandardLibrary {
                     }
                     char* __amber_rt_bool_to_string(void* val) {
                         return __amber_rt_unbox_bool(val) ? "true" : "false";
+                    }
+                    char* __amber_rt_char_to_string(void* val) {
+                        char* buf = (char*)__amber_rt_alloc(2);
+                        buf[0] = __amber_rt_unbox_char(val);
+                        buf[1] = '\0';
+                        return buf;
                     }
                     char* __amber_rt_string_to_string(void* val) {
                         return __amber_rt_unbox_string(val);

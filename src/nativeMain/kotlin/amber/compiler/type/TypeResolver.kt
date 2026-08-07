@@ -39,6 +39,7 @@ class TypeResolver(private val errorReporter: (node: AstNode, message: String, s
             "bool" -> Type.Boolean
             "any" -> Type.Any
             "unit" -> Type.Unit
+            "char" -> Type.Char
             else -> null
         }
         if (builtinType != null) return builtinType

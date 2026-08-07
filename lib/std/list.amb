@@ -14,4 +14,9 @@ intrinsic func pop(l: any[]): any
 
 ##
 # Returns the element at the specified index.
+# Panics if the index is out of bounds.
 intrinsic func get(l: any[], index: num): any
+
+##
+# Returns the element at the specified index or an error if the index is out of bounds.
+intrinsic func get_or_err(l: any[], index: num): any!

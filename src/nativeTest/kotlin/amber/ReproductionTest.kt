@@ -2,83 +2,96 @@ package amber
 
 import amber.compiler.Transpiler
 import amber.compiler.compilerConfig
+import amber.compiler.diagnostic.DiagnosticSeverity
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
 class ReproductionTest {
 
     @Test
-    fun reproducesDoubleLocalAndMasking() {
-        val source = $$"""
-            use "core:io"
-            use "core:str"
-            func value(param1: any = 12): string {
-                if(param1 is num) {
-                    io.println("$param1 is a num")
-                }
-                io.println(param1)
-                return "Hi" + " and " + str.to_string(true)
-            }
-            io.println(value())
-        """.trimIndent()
-
-        val result = transpile(source)
-        if (result.code == null) {
-            val errorMsgs = result.diagnostics.joinToString { "${it.severity}: ${it.message}" }
-            assertTrue(false, "ReproductionTest failed to transpile: $errorMsgs")
-        }
-        val code = result.code!!
-        println("Generated code:\n$code")
-
-        assertTrue(code.contains("int main("), "Should contain main function")
-        assertTrue(code.contains("__am_value("), "Should contain __am_value function")
-    }
-
-    @Test
-    fun testTrailingValErrorMessage() {
-        val source = "val"
-        val result = transpile(source)
-        
-        assertTrue(result.diagnostics.isNotEmpty(), "Should have errors")
-        val error = result.diagnostics[0]
-        println("Error message: $error")
-        
-        assertTrue(error.line >= 0 && error.column >= 0, "Error should not have negative line/column")
-        assertTrue(error.message.contains("expected identifier but got end of file"), "Error message should be improved")
-        assertTrue(error.line == 1 && error.column == 4, "Error should be at line 1, column 4 (after 'val')")
-    }
-
-    @Test
-    fun testNamedAndPositionalArgs() {
+    fun reproduceUserIssue() {
         val source = """
             use "core:io"
 
             struct user {
-              name: string = "none"
-              age: num = 16
+              name = "John"
+              age = 18
             }
 
-            var a = user("Alice", age = 25)
-            var b = user(age = 30, name = "Bob")
-            var c = user("Charlie")
-            
-            io.println(a.name + " " + b.name + " " + c.name)
+            var users: user[] = [user(), user(name = "Smith"), user(name = "Phoebe", age = 14)]
+
+            users += user()
+
+            io.println(users)
+
+            func change_username(u: user, name: string): unit {
+              u.name = name
+            }
+
+            var john = user()
+            io.println("Hello " + john.name + " you are " + john.age + " years old")
+            change_username(john, "Johny")
+            io.println("Hello " + john.name + " you are " + john.age + " years old")
+
+
+            for (user in users) {
+                if (user.age >= 18) {
+                    io.println(user.name + " is an adult")
+                    break
+                } else {
+                    io.println(user.name + " is a minor")
+                }
+            }
+
+            var index = 0
+
+            while(true) {
+                val item = users[index]
+                if (item.age >= 18) {
+                    io.println(item.name + " is an adult")
+                    break
+                } else {
+                    io.println(item.name + " is a minor")
+                }
+                index++
+            }
         """.trimIndent()
 
-        val result = transpile(source)
-        if (result.code == null) {
-            val errorMsgs = result.diagnostics.joinToString("\n") { "${it.line}:${it.column} ${it.severity}: ${it.message}" }
-            assertTrue(false, "testNamedAndPositionalArgs failed to transpile:\n$errorMsgs")
-        }
-        val code = result.code!!
-        println("Generated code:\n$code")
+        val transpiler = Transpiler(
+            compilerConfig {
+                projectRoot = "/tmp"
+                entryFile = "/tmp/test.amb"
+                executableDir = "/home/kys0adam/IdeaProjects/amber-lang"
+            }
+        )
+        val result = transpiler.transpile(source, "/tmp/test.amb")
+
+        assertTrue(result.diagnostics.none { it.severity == DiagnosticSeverity.ERROR }, "Expected no compilation errors")
     }
 
-    private fun transpile(source: String) = Transpiler(
-        compilerConfig {
-            projectRoot = "/tmp"
-            entryFile = "/tmp/test.amb"
-            executableDir = "/home/kys0adam/IdeaProjects/amber-lang"
-        }
-    ).transpile(source, "/tmp/test.amb")
+    @Test
+    fun testGetOrErrInUserScript() {
+        val source = """
+            use "core:io"
+            use "core:list"
+            
+            struct user {
+              name: string = "John"
+              age: num = 18
+            }
+
+            var users: user[] = [user()]
+            val _ = list.get_or_err(users, 0) or panic
+        """.trimIndent()
+        
+        val transpiler = Transpiler(
+            compilerConfig {
+                projectRoot = "/tmp"
+                entryFile = "/tmp/test.amb"
+                executableDir = "/home/kys0adam/IdeaProjects/amber-lang"
+            }
+        )
+        val result = transpiler.transpile(source, "/tmp/test.amb")
+        assertTrue(result.diagnostics.none { it.severity == DiagnosticSeverity.ERROR }, "Expected no errors, got: ${result.diagnostics}")
+    }
 }

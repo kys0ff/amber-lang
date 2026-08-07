@@ -69,6 +69,15 @@ class RuntimeEmitter(
         writer.writeLine("} __amber_box_string_t;")
         writer.writeLine()
 
+        // Boxed Char
+        writer.writeLine("typedef struct {")
+        writer.indent()
+        writer.writeLine("__amber_header_t header;")
+        writer.writeLine("char value;")
+        writer.dedent()
+        writer.writeLine("} __amber_box_char_t;")
+        writer.writeLine()
+
         // Boxed Enum
         writer.writeLine("typedef struct {")
         writer.indent()
@@ -106,15 +115,18 @@ class RuntimeEmitter(
         writer.writeLine("extern __amber_type_t __amber_type_double;")
         writer.writeLine("extern __amber_type_t __amber_type_string;")
         writer.writeLine("extern __amber_type_t __amber_type_bool;")
+        writer.writeLine("extern __amber_type_t __amber_type_char;")
         writer.writeLine("extern __amber_type_t __amber_type_list;")
         writer.writeLine()
         writer.writeLine("char* __amber_rt_double_to_string(void*);")
         writer.writeLine("char* __amber_rt_string_to_string(void*);")
         writer.writeLine("char* __amber_rt_bool_to_string(void*);")
+        writer.writeLine("char* __amber_rt_char_to_string(void*);")
         writer.writeLine("char* __amber_rt_list_to_string(void*);")
         writer.writeLine()
         writer.writeLine("char* __amber_rt_to_string(void* val);")
         writer.writeLine("char* __amber_rt_str_concat(const char* s1, const char* s2);")
+        writer.writeLine("void __amber_rt_panic(const char* msg);")
         writer.writeLine()
     }
 
@@ -189,6 +201,18 @@ class RuntimeEmitter(
                 return (char*)p;
             }
             
+            static inline void* __amber_rt_box_char(char c) {
+                __amber_box_char_t* p = (__amber_box_char_t*)__amber_rt_alloc(sizeof(__amber_box_char_t));
+                p->header.type = &__amber_type_char;
+                p->value = c;
+                return p;
+            }
+
+            static inline char __amber_rt_unbox_char(void* p) {
+                if (!p) return '\0';
+                return ((__amber_box_char_t*)p)->value;
+            }
+            
             static inline void* __amber_rt_box_enum(int value, __amber_type_t* type) {
                 __amber_box_enum_t* p = (__amber_box_enum_t*)__amber_rt_alloc(sizeof(__amber_box_enum_t));
                 p->header.type = type;
@@ -234,10 +258,11 @@ class RuntimeEmitter(
     }
 
     fun emitDefinitions() {
-        writer.writeLine("__amber_type_t __amber_type_double = { \"num\", 1, NULL, 0, __amber_rt_double_to_string };")
-        writer.writeLine("__amber_type_t __amber_type_string = { \"string\", 2, NULL, 0, __amber_rt_string_to_string };")
-        writer.writeLine("__amber_type_t __amber_type_bool = { \"bool\", 3, NULL, 0, __amber_rt_bool_to_string };")
-        writer.writeLine("__amber_type_t __amber_type_list = { \"list\", 4, NULL, 0, __amber_rt_list_to_string };")
+        writer.writeLine("__amber_type_t __amber_type_double \u003d { \"num\", 1, NULL, 0, __amber_rt_double_to_string };")
+        writer.writeLine("__amber_type_t __amber_type_string \u003d { \"string\", 2, NULL, 0, __amber_rt_string_to_string };")
+        writer.writeLine("__amber_type_t __amber_type_bool \u003d { \"bool\", 3, NULL, 0, __amber_rt_bool_to_string };")
+        writer.writeLine("__amber_type_t __amber_type_char \u003d { \"char\", 5, NULL, 0, __amber_rt_char_to_string };")
+        writer.writeLine("__amber_type_t __amber_type_list \u003d { \"list\", 4, NULL, 0, __amber_rt_list_to_string };")
         writer.writeLine()
     }
 }

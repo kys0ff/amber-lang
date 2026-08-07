@@ -4,12 +4,15 @@ import amber.compiler.ast.ArrayLiteralExpression
 import amber.compiler.ast.AssignmentExpression
 import amber.compiler.ast.BinaryExpression
 import amber.compiler.ast.BlockStatement
+import amber.compiler.ast.BreakStatement
 import amber.compiler.ast.CallExpression
 import amber.compiler.ast.CatchExpression
+import amber.compiler.ast.ContinueStatement
 import amber.compiler.ast.EnumDeclaration
 import amber.compiler.ast.ErrorNode
 import amber.compiler.ast.Expression
 import amber.compiler.ast.ExpressionStatement
+import amber.compiler.ast.ForStatement
 import amber.compiler.ast.FunctionDeclaration
 import amber.compiler.ast.IdentifierExpression
 import amber.compiler.ast.IfStatement
@@ -111,7 +114,7 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
             val token = peek()
             if (token is Token.Keyword) {
                 when (token.value) {
-                    "func", "val", "var", "if", "while", "return", "use", "struct" -> return
+                    "func", "val", "var", "if", "while", "for", "return", "break", "continue", "use", "struct" -> return
                 }
             }
             consume()
@@ -163,6 +166,17 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
                     "val", "var" -> parseVariableDeclaration()
                     "if" -> parseIfStatement()
                     "while" -> parseWhileStatement()
+                    "for" -> parseForStatement()
+                    "break" -> {
+                        val t = consume()
+                        BreakStatement(t.line, t.column)
+                    }
+
+                    "continue" -> {
+                        val t = consume()
+                        ContinueStatement(t.line, t.column)
+                    }
+
                     "return" -> parseReturnStatement()
                     "use" -> parseImportStatement()
                     else -> parseExpressionStatement()
@@ -382,6 +396,69 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
         expectToken(")")
         val body = parseBlockStatement()
         return WhileStatement(condition, body, whileKeyword.line, whileKeyword.column)
+    }
+
+    private fun parseForStatement(): ForStatement {
+        val forKeyword = consume()
+        skipNewlines()
+        expectToken("(")
+        skipNewlines()
+
+        val firstId = parseIdentifierExpression()
+        var firstType: String? = null
+        if (peek().value() == ":") {
+            consume()
+            firstType = parseType()
+        }
+
+        var secondId: IdentifierExpression? = null
+        var secondType: String? = null
+
+        if (peek().value() == ",") {
+            consume()
+            skipNewlines()
+            secondId = parseIdentifierExpression()
+            if (peek().value() == ":") {
+                consume()
+                secondType = parseType()
+            }
+        }
+
+        skipNewlines()
+        expectToken("in")
+        skipNewlines()
+
+        val iterable = parseExpression()
+        skipNewlines()
+        expectToken(")")
+
+        val body = parseBlockStatement()
+
+        return if (secondId != null) {
+            // for (index, item in iterable)
+            ForStatement(
+                itemName = secondId,
+                itemTypeAnnotation = secondType,
+                indexName = firstId,
+                indexTypeAnnotation = firstType,
+                iterable = iterable,
+                body = body,
+                line = forKeyword.line,
+                column = forKeyword.column
+            )
+        } else {
+            // for (item in iterable)
+            ForStatement(
+                itemName = firstId,
+                itemTypeAnnotation = firstType,
+                indexName = null,
+                indexTypeAnnotation = null,
+                iterable = iterable,
+                body = body,
+                line = forKeyword.line,
+                column = forKeyword.column
+            )
+        }
     }
 
     private fun parseReturnStatement(): ReturnStatement {
@@ -627,25 +704,30 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
                         is Token.Keyword -> {
                             when (afterOr.value) {
                                 "panic" -> {
-                                    consume()
-                                    val panicMessage = IdentifierExpression(
-                                        "__amber_err",
-                                        afterOr.line,
-                                        afterOr.column,
-                                        isSynthetic = true
-                                    )
+                                    val panicToken = consume()
+                                    val panicMessage =
+                                        if (peek() !is Token.EOF && peek() !is Token.Newline && peek().value() != "}" && peek().value() != ")" && peek().value() != "," && peek().value() != "or") {
+                                            parseExpression()
+                                        } else {
+                                            IdentifierExpression(
+                                                "__amber_err",
+                                                panicToken.line,
+                                                panicToken.column,
+                                                isSynthetic = true
+                                            )
+                                        }
                                     val panicBody = BlockStatement(
                                         listOf(
                                             ExpressionStatement(
                                                 PanicExpression(
                                                     panicMessage,
                                                     isFatal = true,
-                                                    afterOr.line,
-                                                    afterOr.column
-                                                ), afterOr.line, afterOr.column
+                                                    panicToken.line,
+                                                    panicToken.column
+                                                ), panicToken.line, panicToken.column
                                             )
                                         ),
-                                        afterOr.line, afterOr.column
+                                        panicToken.line, panicToken.column
                                     )
                                     expr = CatchExpression(
                                         expr,

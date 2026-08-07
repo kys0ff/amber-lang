@@ -2,7 +2,7 @@ package amber.compiler.backend.c
 
 import amber.compiler.type.Type
 
-class CTypeMapper {
+class CTypeMapper(private val symbolEmitter: SymbolEmitter = SymbolEmitter()) {
     fun map(type: Type): String = when (type) {
         Type.Number -> "double"
         Type.String -> "char*"
@@ -18,7 +18,7 @@ class CTypeMapper {
         is Type.Function -> "void*"
         is Type.Enum -> "int"
         is Type.EnumNamespace -> "int"
-        is Type.Struct -> SymbolEmitter().mangle(type.name, type.namespace)
+        is Type.Struct -> symbolEmitter.mangleStruct(type.name, type.namespace)
         is Type.Module -> "void*"
     }
 

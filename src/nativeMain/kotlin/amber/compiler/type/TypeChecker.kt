@@ -6,12 +6,15 @@ import amber.compiler.ast.AssignmentExpression
 import amber.compiler.ast.AstNode
 import amber.compiler.ast.BinaryExpression
 import amber.compiler.ast.BlockStatement
+import amber.compiler.ast.BreakStatement
 import amber.compiler.ast.CallExpression
 import amber.compiler.ast.CatchExpression
+import amber.compiler.ast.ContinueStatement
 import amber.compiler.ast.EnumDeclaration
 import amber.compiler.ast.ErrorNode
 import amber.compiler.ast.Expression
 import amber.compiler.ast.ExpressionStatement
+import amber.compiler.ast.ForStatement
 import amber.compiler.ast.FunctionDeclaration
 import amber.compiler.ast.IdentifierExpression
 import amber.compiler.ast.IfStatement
@@ -55,6 +58,7 @@ class TypeChecker(
     private var currentFunctionReturnType: Type? = null
     private var currentFunctionPropagatedUnsafe = false
     private val expectedReturnTypes = mutableListOf<Type>()
+    private var loopDepth = 0
 
     private val typeResolver = TypeResolver(::reportError)
     private val typeCompatibilityChecker = TypeCompatibilityChecker(::reportError)
@@ -243,7 +247,7 @@ class TypeChecker(
     }
 
     private fun resolveStructFields(declaration: StructDeclaration) {
-        val structSymbol = currentScope.resolve(declaration.name.name) ?: return
+        val structSymbol = currentScope.resolveLocal(declaration.name.name) ?: return
         val structType = structSymbol.type as Type.Struct
         val fields = mutableMapOf<String, Type.Struct.StructField>()
 
@@ -361,7 +365,7 @@ class TypeChecker(
     private fun inferFunctionReturnType(function: FunctionDeclaration) {
         if (function.isIntrinsic || function.returnTypeAnnotation != null) return
 
-        val functionSymbol = currentScope.resolve(function.name.name) ?: return
+        val functionSymbol = currentScope.resolveLocal(function.name.name) ?: return
         val paramTypes = (functionSymbol.type as Type.Function).parameterTypes
 
         val inferenceScope = currentScope.enterScope()
@@ -448,6 +452,9 @@ class TypeChecker(
             is BlockStatement -> visitBlockStatement(statement, isExpression = skipUnusedWarning)
             is IfStatement -> visitIfStatement(statement)
             is WhileStatement -> visitWhileStatement(statement)
+            is ForStatement -> visitForStatement(statement)
+            is BreakStatement -> visitBreakStatement(statement)
+            is ContinueStatement -> visitContinueStatement(statement)
             is FunctionDeclaration -> visitFunctionDeclaration(statement)
             is ReturnStatement -> visitReturnStatement(statement)
             is ImportStatement -> visitImportStatement(statement)
@@ -1122,7 +1129,7 @@ class TypeChecker(
         }
         defineSymbol(
             catch,
-            Symbol(catch.errorVarName, errorVarType, line = catch.line, column = catch.column)
+            Symbol(catch.errorVarName, errorVarType, isInitialized = true, line = catch.line, column = catch.column)
         )
 
         visitBlockStatement(
@@ -1175,7 +1182,7 @@ class TypeChecker(
 
         if (block.statements.size > 1 && isExpression && expectedReturnType != null && expectedReturnType != Type.Unit && expectedReturnType != Type.Error) {
             val last = block.statements.lastOrNull()
-            if (last !is ReturnStatement) {
+            if (!isDiverging(last) && last !is ReturnStatement) {
                 reportError(
                     last ?: block,
                     "$contextName with multiple expressions must explicitly return a value",
@@ -1208,7 +1215,99 @@ class TypeChecker(
             "while statement"
         )
 
+        loopDepth++
         visitBlockStatement(whileStmt.body)
+        loopDepth--
+    }
+
+    private fun visitForStatement(forStmt: ForStatement) {
+        val elementType = when (val iterableType = visitExpression(forStmt.iterable)) {
+            is Type.List -> iterableType.elementType
+            is Type.ArrayList -> iterableType.elementType
+            Type.String -> Type.Char
+            Type.Any -> Type.Any
+            Type.Error -> Type.Error
+            else -> {
+                reportError(
+                    forStmt.iterable,
+                    "for-in loop expects list or string, but got $iterableType",
+                    "ensure the expression evaluates to an iterable type"
+                )
+                Type.Error
+            }
+        }
+
+        currentScope = currentScope.enterScope()
+
+        // Index variable
+        if (forStmt.indexName != null) {
+            val declaredIndexType = forStmt.indexTypeAnnotation?.let {
+                typeResolver.resolveType(it, forStmt.indexName, currentScope)
+            } ?: Type.Number
+
+            if (declaredIndexType != Type.Number && declaredIndexType != Type.Error) {
+                reportError(
+                    forStmt.indexName,
+                    "loop index must be of type 'num', but got $declaredIndexType"
+                )
+            }
+
+            defineSymbol(
+                forStmt.indexName,
+                Symbol(
+                    forStmt.indexName.name,
+                    Type.Number,
+                    isMutable = false,
+                    isInitialized = true,
+                    line = forStmt.indexName.line,
+                    column = forStmt.indexName.column
+                )
+            )
+        }
+
+        // Item variable
+        val declaredItemType = forStmt.itemTypeAnnotation?.let {
+            typeResolver.resolveType(it, forStmt.itemName, currentScope)
+        } ?: elementType
+
+        if (declaredItemType != Type.Error && elementType != Type.Error) {
+            typeCompatibilityChecker.checkAssignmentCompatibility(
+                declaredItemType,
+                elementType,
+                forStmt.itemName,
+                forStmt.itemName.name
+            )
+        }
+
+        defineSymbol(
+            forStmt.itemName,
+            Symbol(
+                forStmt.itemName.name,
+                declaredItemType,
+                isMutable = false,
+                isInitialized = true,
+                line = forStmt.itemName.line,
+                column = forStmt.itemName.column
+            )
+        )
+
+        loopDepth++
+        visitBlockStatement(forStmt.body)
+        loopDepth--
+
+        currentScope = currentScope.exitScope()!!
+    }
+
+    private fun visitBreakStatement(breakStmt: BreakStatement) {
+        if (loopDepth == 0) {
+            reportError(breakStmt, "'break' is only allowed inside a loop")
+        }
+    }
+
+    private fun visitContinueStatement(continueStmt: ContinueStatement) {
+        if (loopDepth == 0) {
+            reportError(continueStmt, "'continue' is only allowed inside a loop")
+        }
     }
 
     private fun visitEnumDeclaration(declaration: EnumDeclaration) {
@@ -1335,10 +1434,12 @@ class TypeChecker(
             }
         }
 
-        val existingSymbol = currentScope.resolve(function.name.name)
+        val existingSymbol = currentScope.resolveLocal(function.name.name)
         val functionSymbol: Symbol
         if (existingSymbol != null && existingSymbol.line == function.name.line && existingSymbol.column == function.name.column) {
             existingSymbol.type = functionType
+            existingSymbol.inferableParameterIndices.clear()
+            existingSymbol.inferableParameterIndices.addAll(inferableParameterIndices)
             functionSymbol = existingSymbol
         } else {
             functionSymbol = Symbol(
@@ -1547,6 +1648,7 @@ class TypeChecker(
                 }
 
                 is WhileStatement -> traverse(stmt.body)
+                is ForStatement -> traverse(stmt.body)
                 else -> {}
             }
         }
@@ -1577,6 +1679,26 @@ class TypeChecker(
                 thenReturns && elseReturns
             }
 
+            is WhileStatement -> {
+                val condition = statement.condition
+                if (condition is LiteralExpression && condition.value == true) {
+                    definitelyReturns(statement.body)
+                } else false
+            }
+
+            else -> false
+        }
+    }
+
+    private fun isDiverging(statement: Statement?): Boolean {
+        if (statement == null) return false
+        return when (statement) {
+            is ReturnStatement -> true
+            is BreakStatement -> true
+            is ContinueStatement -> true
+            is ExpressionStatement -> expressionTypes[statement.expression] == Type.Nothing
+            is BlockStatement -> isDiverging(statement.statements.lastOrNull())
+            is IfStatement -> isDiverging(statement.thenBranch) && isDiverging(statement.elseBranch)
             else -> false
         }
     }

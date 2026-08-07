@@ -14,7 +14,6 @@ import amber.compiler.ast.LiteralExpression
 import amber.compiler.ast.MemberAccessExpression
 import amber.compiler.ast.NamedArgumentExpression
 import amber.compiler.ast.PanicExpression
-import amber.compiler.ast.ReturnStatement
 import amber.compiler.ast.StringTemplateExpression
 import amber.compiler.ast.UnaryExpression
 import amber.compiler.ast.VariableDeclaration
@@ -28,9 +27,10 @@ class ExpressionEmitter(
     private val resolvedSymbols: Map<Expression, Symbol>,
     private val resolvedIsTypes: Map<IsExpression, Type> = emptyMap(),
     private val symbolEmitter: SymbolEmitter,
+    private val typeMapper: CTypeMapper,
     private val runtimeProvider: RuntimeProvider
 ) {
-    private val typeMapper = CTypeMapper()
+    var statementEmitter: StatementEmitter? = null
 
     fun emit(expression: Expression, expectedType: Type? = null) {
         val actualType = expressionTypes[expression]
@@ -55,6 +55,12 @@ class ExpressionEmitter(
                 writer.write(")")
                 return
             }
+            if (actualType == Type.Char) {
+                writer.write("__amber_rt_box_char(")
+                emitRaw(expression)
+                writer.write(")")
+                return
+            }
             if (actualType is Type.Enum) {
                 writer.write("__amber_rt_box_enum(")
                 emitRaw(expression)
@@ -62,7 +68,7 @@ class ExpressionEmitter(
                 return
             }
             if (actualType is Type.Struct) {
-                val mangledName = symbolEmitter.mangle(actualType.name, actualType.namespace)
+                val mangledName = symbolEmitter.mangleStruct(actualType.name, actualType.namespace)
                 writer.write("__amber_rt_box_$mangledName(")
                 emitRaw(expression)
                 writer.write(")")
@@ -90,6 +96,12 @@ class ExpressionEmitter(
                 writer.write(")")
                 return
             }
+            if (expectedType == Type.Char) {
+                writer.write("__amber_rt_unbox_char(")
+                emitRaw(expression)
+                writer.write(")")
+                return
+            }
             if (expectedType is Type.Enum) {
                 writer.write("__amber_rt_unbox_enum(")
                 emitRaw(expression)
@@ -97,7 +109,7 @@ class ExpressionEmitter(
                 return
             }
             if (expectedType is Type.Struct) {
-                val mangledName = symbolEmitter.mangle(expectedType.name, expectedType.namespace)
+                val mangledName = symbolEmitter.mangleStruct(expectedType.name, expectedType.namespace)
                 writer.write("__amber_rt_unbox_$mangledName(")
                 emitRaw(expression)
                 writer.write(")")
@@ -264,8 +276,7 @@ class ExpressionEmitter(
                 emit(expression.value)
             }
             is IsExpression -> {
-                val targetType = resolvedIsTypes[expression]
-                val descriptor = when (targetType) {
+                val descriptor = when (val targetType = resolvedIsTypes[expression]) {
                     is Type.Number -> "&__amber_type_double"
                     is Type.String -> "&__amber_type_string"
                     is Type.Boolean -> "&__amber_type_bool"
@@ -281,7 +292,34 @@ class ExpressionEmitter(
             is IndexAccessExpression -> {
                 val targetType = expressionTypes[expression.target]
                 if (targetType is Type.List || targetType is Type.ArrayList || targetType == Type.Any) {
+                    val elementType = when (targetType) {
+                        is Type.List -> targetType.elementType
+                        is Type.ArrayList -> targetType.elementType
+                        else -> Type.Any
+                    }
+                    val boxFunc = when (elementType) {
+                        Type.Number -> "__amber_rt_unbox_double"
+                        Type.Boolean -> "__amber_rt_unbox_bool"
+                        Type.String -> "__amber_rt_unbox_string"
+                        Type.Char -> "__amber_rt_unbox_char"
+                        is Type.Enum -> "__amber_rt_unbox_enum"
+                        is Type.Struct -> "__amber_rt_unbox_${symbolEmitter.mangleStruct(elementType.name, elementType.namespace)}"
+                        else -> ""
+                    }
+                    if (boxFunc.isNotEmpty()) {
+                        writer.write("$boxFunc(")
+                    }
                     writer.write(symbolEmitter.runtimeHelper("list_get"))
+                    writer.write("(")
+                    emit(expression.target)
+                    writer.write(", ")
+                    emit(expression.index)
+                    writer.write(")")
+                    if (boxFunc.isNotEmpty()) {
+                        writer.write(")")
+                    }
+                } else if (targetType == Type.String) {
+                    writer.write(symbolEmitter.runtimeHelper("str_get"))
                     writer.write("(")
                     emit(expression.target)
                     writer.write(", ")
@@ -332,18 +370,13 @@ class ExpressionEmitter(
                     val isLast = index == expression.body.statements.size - 1
                     if (isLast) {
                         if (stmt is ExpressionStatement) {
-                            writer.write("$finalResVar = ")
-                            emit(stmt.expression)
-                            writer.write("; ")
-                        } else if (stmt is ReturnStatement && stmt.value != null) {
-                            val valType = expressionTypes[stmt.value]
-                            if (valType is Type.Unsafe || valType == Type.Nothing) {
-                                writer.write("return ")
-                                emit(stmt.value)
+                            val expr = stmt.expression
+                            if (expressionTypes[expr] == Type.Nothing) {
+                                emit(expr)
                                 writer.write("; ")
                             } else {
                                 writer.write("$finalResVar = ")
-                                emit(stmt.value)
+                                emit(expr)
                                 writer.write("; ")
                             }
                         } else if (stmt is VariableDeclaration) {
@@ -358,23 +391,10 @@ class ExpressionEmitter(
                             writer.write("; ")
                             writer.write("$finalResVar = $vName; ")
                         } else {
-                            writer.write("/* unsupported last stmt in catch */ ")
+                            statementEmitter?.emit(stmt) ?: writer.write("/* StatementEmitter not set */ ")
                         }
                     } else {
-                        if (stmt is ExpressionStatement) {
-                            emit(stmt.expression)
-                            writer.write("; ")
-                        } else if (stmt is VariableDeclaration) {
-                            val vSymbol = resolvedSymbols[stmt.name]
-                            val vType = expressionTypes[stmt.initializer] ?: vSymbol?.type ?: Type.Any
-                            val vName = vSymbol?.let { symbolEmitter.mangle(it.name, it.namespace) } ?: symbolEmitter.mangle(stmt.name.name)
-                            writer.write("${typeMapper.map(vType)} $vName")
-                            if (stmt.initializer != null) {
-                                writer.write(" = ")
-                                emit(stmt.initializer)
-                            }
-                            writer.write("; ")
-                        }
+                        statementEmitter?.emit(stmt) ?: writer.write("/* StatementEmitter not set */ ")
                     }
                 }
                 
@@ -429,7 +449,7 @@ class ExpressionEmitter(
     }
 
     private fun emitStructConstruction(call: CallExpression, structType: Type.Struct) {
-        val mangledName = symbolEmitter.mangle(structType.name, structType.namespace)
+        val mangledName = symbolEmitter.mangleStruct(structType.name, structType.namespace)
         writer.write("({ ")
         writer.write("$mangledName __am_tmp = {0}; ")
 

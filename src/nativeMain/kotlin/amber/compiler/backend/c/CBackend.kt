@@ -45,10 +45,11 @@ class CBackend(
         }
 
         val symbolEmitter = SymbolEmitter()
-        val typeMapper = CTypeMapper()
+        val typeMapper = CTypeMapper(symbolEmitter)
         val runtimeEmitter = RuntimeEmitter(writer, gc)
-        val expressionEmitter = ExpressionEmitter(writer, usedExpressionTypes, usedResolvedSymbols, resolvedIsTypes, symbolEmitter, runtimeProvider)
+        val expressionEmitter = ExpressionEmitter(writer, usedExpressionTypes, usedResolvedSymbols, resolvedIsTypes, symbolEmitter, typeMapper, runtimeProvider)
         val statementEmitter = StatementEmitter(writer, expressionEmitter, symbolEmitter, typeMapper, usedExpressionTypes, usedResolvedSymbols)
+        expressionEmitter.statementEmitter = statementEmitter
 
         runtimeEmitter.emitHeaders()
         runtimeEmitter.emitTypedefs()

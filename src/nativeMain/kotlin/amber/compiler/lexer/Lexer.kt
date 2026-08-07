@@ -4,7 +4,7 @@ class Lexer(private val source: String) {
     private val state = LexerState()
 
     private val keywords = setOf(
-        "func", "val", "var", "if", "else", "while", "for", "return", "use", "as", "is", "intrinsic", "panic", "or", "catch", "enum", "struct"
+        "func", "val", "var", "if", "else", "while", "for", "return", "use", "as", "is", "intrinsic", "panic", "or", "catch", "enum", "struct", "break", "continue", "in"
     )
     private val booleanLiterals = setOf("true", "false")
     private val nullLiteral = "null"
