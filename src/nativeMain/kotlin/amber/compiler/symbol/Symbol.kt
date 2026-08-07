@@ -12,6 +12,7 @@ class Symbol(
     var isMutated: Boolean = false,
     var isParameter: Boolean = false,
     var isInitialized: Boolean = false,
+    val isExplicitlyTyped: Boolean = false,
     val inferableParameterIndices: MutableSet<Int> = mutableSetOf(),
     var isUsed: Boolean = false,
     val isIntrinsic: Boolean = false,

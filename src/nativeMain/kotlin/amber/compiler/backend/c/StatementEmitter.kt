@@ -167,6 +167,15 @@ class StatementEmitter(
                 val variantsVar = symbolEmitter.mangle("variants_$enumName", ns)
                 writer.writeLine("const char* $variantsVar[] = { ${statement.variants.joinToString(", ") { "\"${it.name}\"" }} };")
 
+                val toStringFunc = symbolEmitter.mangle("${enumName}_to_string", ns)
+                writer.writeLine("static char* $toStringFunc(void* val) {")
+                writer.indent()
+                writer.writeLine("__amber_box_enum_t* e = (__amber_box_enum_t*)val;")
+                writer.writeLine("if (e->value >= 0 && e->value < ${statement.variants.size}) return (char*)$variantsVar[e->value];")
+                writer.writeLine("return \"unknown\";")
+                writer.dedent()
+                writer.writeLine("}")
+
                 writer.writeLine("typedef enum {")
                 writer.indent()
                 statement.variants.forEachIndexed { index, variant ->
@@ -174,7 +183,7 @@ class StatementEmitter(
                 }
                 writer.dedent()
                 writer.writeLine("} ${symbolEmitter.mangle(enumName, ns)};")
-                writer.writeLine("__amber_type_t ${symbolEmitter.mangle("type_$enumName", ns)} = { \"$enumName\", ${100 + (ns ?: "").hashCode() + enumName.hashCode()}, $variantsVar, ${statement.variants.size} };")
+                writer.writeLine("__amber_type_t ${symbolEmitter.mangle("type_$enumName", ns)} = { \"$enumName\", ${100 + (ns ?: "").hashCode() + enumName.hashCode()}, $variantsVar, ${statement.variants.size}, $toStringFunc };")
             }
             is StructDeclaration -> {
                 val symbol = resolvedSymbols[statement.name]
@@ -190,6 +199,35 @@ class StatementEmitter(
                 }
                 writer.dedent()
                 writer.writeLine("} $mangledName;")
+
+                val boxName = "${mangledName}_box"
+                writer.writeLine("typedef struct {")
+                writer.indent()
+                writer.writeLine("__amber_header_t header;")
+                writer.writeLine("$mangledName value;")
+                writer.dedent()
+                writer.writeLine("} $boxName;")
+
+                val toStringFunc = symbolEmitter.mangle("${structName}_to_string", ns)
+                writer.writeLine("static char* $toStringFunc(void* val) { return \"$structName\"; }")
+
+                writer.writeLine("__amber_type_t ${symbolEmitter.mangle("type_$structName", ns)} = { \"$structName\", ${200 + (ns ?: "").hashCode() + structName.hashCode()}, NULL, 0, $toStringFunc };")
+
+                writer.writeLine("static inline void* __amber_rt_box_$mangledName($mangledName v) {")
+                writer.indent()
+                writer.writeLine("$boxName* p = ($boxName*)__amber_rt_alloc(sizeof($boxName));")
+                writer.writeLine("p->header.type = &${symbolEmitter.mangle("type_$structName", ns)};")
+                writer.writeLine("p->value = v;")
+                writer.writeLine("return p;")
+                writer.dedent()
+                writer.writeLine("}")
+
+                writer.writeLine("static inline $mangledName __amber_rt_unbox_$mangledName(void* p) {")
+                writer.indent()
+                writer.writeLine("if (!p) { $mangledName v = {0}; return v; }")
+                writer.writeLine("return (($boxName*)p)->value;")
+                writer.dedent()
+                writer.writeLine("}")
             }
             is ImportStatement -> {}
         }

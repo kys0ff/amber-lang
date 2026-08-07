@@ -61,6 +61,13 @@ class ExpressionEmitter(
                 writer.write(", &${symbolEmitter.mangle("type_${actualType.name}", actualType.moduleNamespace)})")
                 return
             }
+            if (actualType is Type.Struct) {
+                val mangledName = symbolEmitter.mangle(actualType.name, actualType.namespace)
+                writer.write("__amber_rt_box_$mangledName(")
+                emitRaw(expression)
+                writer.write(")")
+                return
+            }
         }
         
         // Unboxing: any -> primitive
@@ -85,6 +92,13 @@ class ExpressionEmitter(
             }
             if (expectedType is Type.Enum) {
                 writer.write("__amber_rt_unbox_enum(")
+                emitRaw(expression)
+                writer.write(")")
+                return
+            }
+            if (expectedType is Type.Struct) {
+                val mangledName = symbolEmitter.mangle(expectedType.name, expectedType.namespace)
+                writer.write("__amber_rt_unbox_$mangledName(")
                 emitRaw(expression)
                 writer.write(")")
                 return

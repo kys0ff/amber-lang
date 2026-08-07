@@ -25,6 +25,10 @@ class SymbolTable(
         return true
     }
 
+    fun resolveLocal(name: String): Symbol? {
+        return symbols[name]
+    }
+
     /**
      * Looks up a symbol by name, traversing up the parent scopes if necessary.
      */

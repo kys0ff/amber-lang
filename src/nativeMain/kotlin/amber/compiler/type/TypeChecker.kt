@@ -107,8 +107,18 @@ class TypeChecker(
     }
 
     private fun defineSymbol(node: AstNode, symbol: Symbol) {
-        if (!currentScope.define(symbol)) {
+        val existing = currentScope.resolveLocal(symbol.name)
+        if (existing != null) {
+            if (existing.line == symbol.line && existing.column == symbol.column) {
+                // Same symbol being re-defined (e.g. during pre-pass or multi-pass analysis)
+                if (node is Expression) {
+                    resolvedSymbols[node] = existing
+                }
+                return
+            }
             reportError(node, "identifier '${symbol.name}' already exists in this scope")
+        } else {
+            currentScope.define(symbol)
         }
         if (node is Expression) {
             resolvedSymbols[node] = symbol
@@ -196,6 +206,9 @@ class TypeChecker(
         // Pass 2: Infer return types for all functions
         program.statements.filterIsInstance<FunctionDeclaration>()
             .forEach { inferFunctionReturnType(it) }
+
+        // Pass 2.5: Detect variable promotions to 'any'
+        detectVariablePromotions(program)
 
         // Pass 3: Full semantic analysis and error reporting
         program.statements.forEach {
@@ -620,7 +633,12 @@ class TypeChecker(
                 )
             }
         } else {
-            finalType = initializerType ?: Type.Error
+            val existing = currentScope.resolveLocal(declaration.name.name)
+            if (existing != null && existing.line == declaration.name.line && existing.column == declaration.name.column && existing.type == Type.Any && !existing.isExplicitlyTyped) {
+                finalType = Type.Any
+            } else {
+                finalType = initializerType ?: Type.Error
+            }
             if (finalType == Type.Error) {
                 reportError(
                     declaration,
@@ -636,6 +654,7 @@ class TypeChecker(
             declaration.isMutable,
             isIntrinsic = declaration.isIntrinsic,
             isInitialized = declaration.initializer != null || declaration.isIntrinsic,
+            isExplicitlyTyped = declaration.typeAnnotation != null,
             line = declaration.name.line,
             column = declaration.name.column,
             namespace = namespace
@@ -1499,6 +1518,72 @@ class TypeChecker(
         } catch (e: Exception) {
             reportError(importStmt, "error processing import: ${e.message}")
         }
+    }
+
+    private fun detectVariablePromotions(program: Program) {
+        val wasQuiet = isQuietMode
+        isQuietMode = true
+
+        // We use the same scope as the main pass will use initially
+        fun traverse(stmt: Statement) {
+            when (stmt) {
+                is VariableDeclaration -> {
+                    val declaredType =
+                        stmt.typeAnnotation?.let { typeResolver.resolveType(it, stmt, currentScope) }
+                    val initializerType = stmt.initializer?.let { visitExpression(it) } ?: Type.Any
+                    val finalType = declaredType ?: initializerType
+                    val symbol = Symbol(
+                        stmt.name.name,
+                        finalType,
+                        isMutable = stmt.isMutable,
+                        isInitialized = stmt.initializer != null,
+                        isExplicitlyTyped = stmt.typeAnnotation != null,
+                        line = stmt.name.line,
+                        column = stmt.name.column
+                    )
+                    defineSymbol(stmt.name, symbol)
+                }
+
+                is ExpressionStatement -> {
+                    val expr = stmt.expression
+                    if (expr is AssignmentExpression) {
+                        val target = expr.target
+                        if (target is IdentifierExpression) {
+                            val symbol = currentScope.resolve(target.name)
+                            if (symbol != null && symbol.isMutable && !symbol.isExplicitlyTyped) {
+                                val valueType = visitExpression(expr.value)
+                                if (!typeCompatibilityChecker.isCompatible(symbol.type, valueType)) {
+                                    symbol.type = Type.Any
+                                }
+                            }
+                        }
+                    }
+                }
+
+                is BlockStatement -> {
+                    val outerScope = currentScope
+                    currentScope = currentScope.enterScope()
+                    stmt.statements.forEach { traverse(it) }
+                    currentScope = outerScope
+                }
+
+                is IfStatement -> {
+                    traverse(stmt.thenBranch)
+                    stmt.elseBranch?.let { traverse(it) }
+                }
+
+                is WhileStatement -> traverse(stmt.body)
+                else -> {}
+            }
+        }
+
+        program.statements.forEach { traverse(it) }
+
+        // We DON'T want to keep the symbols defined here if they are not top-level,
+        // but for top-level symbols in the main file, they are in the global scope.
+        // Actually, Pass 3 will redefine them (which we allowed in defineSymbol).
+        
+        isQuietMode = wasQuiet
     }
 
     private fun definitelyReturns(statement: Statement): Boolean {

@@ -29,6 +29,7 @@ class RuntimeEmitter(
         writer.writeLine("int32_t id;")
         writer.writeLine("const char** variants;")
         writer.writeLine("int variant_count;")
+        writer.writeLine("char* (*to_string)(void*);")
         writer.dedent()
         writer.writeLine("} __amber_type_t;")
         writer.writeLine()
@@ -106,6 +107,11 @@ class RuntimeEmitter(
         writer.writeLine("extern __amber_type_t __amber_type_string;")
         writer.writeLine("extern __amber_type_t __amber_type_bool;")
         writer.writeLine("extern __amber_type_t __amber_type_list;")
+        writer.writeLine()
+        writer.writeLine("char* __amber_rt_double_to_string(void*);")
+        writer.writeLine("char* __amber_rt_string_to_string(void*);")
+        writer.writeLine("char* __amber_rt_bool_to_string(void*);")
+        writer.writeLine("char* __amber_rt_list_to_string(void*);")
         writer.writeLine()
         writer.writeLine("char* __amber_rt_to_string(void* val);")
         writer.writeLine("char* __amber_rt_str_concat(const char* s1, const char* s2);")
@@ -219,10 +225,10 @@ class RuntimeEmitter(
     }
 
     fun emitDefinitions() {
-        writer.writeLine("__amber_type_t __amber_type_double = { \"num\", 1, NULL, 0 };")
-        writer.writeLine("__amber_type_t __amber_type_string = { \"string\", 2, NULL, 0 };")
-        writer.writeLine("__amber_type_t __amber_type_bool = { \"bool\", 3, NULL, 0 };")
-        writer.writeLine("__amber_type_t __amber_type_list = { \"list\", 4, NULL, 0 };")
+        writer.writeLine("__amber_type_t __amber_type_double = { \"num\", 1, NULL, 0, __amber_rt_double_to_string };")
+        writer.writeLine("__amber_type_t __amber_type_string = { \"string\", 2, NULL, 0, __amber_rt_string_to_string };")
+        writer.writeLine("__amber_type_t __amber_type_bool = { \"bool\", 3, NULL, 0, __amber_rt_bool_to_string };")
+        writer.writeLine("__amber_type_t __amber_type_list = { \"list\", 4, NULL, 0, __amber_rt_list_to_string };")
         writer.writeLine()
     }
 }

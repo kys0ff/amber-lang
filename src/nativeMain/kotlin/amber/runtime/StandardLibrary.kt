@@ -195,33 +195,31 @@ object StandardLibrary {
             func(
                 "to_string", listOf(Type.Any), Type.String, "to_string",
                 cImpl = """
+                    char* __amber_rt_double_to_string(void* val) {
+                        return __amber_rt_from_num(__amber_rt_unbox_double(val));
+                    }
+                    char* __amber_rt_bool_to_string(void* val) {
+                        return __amber_rt_unbox_bool(val) ? "true" : "false";
+                    }
+                    char* __amber_rt_string_to_string(void* val) {
+                        return __amber_rt_unbox_string(val);
+                    }
+                    char* __amber_rt_list_to_string(void* val) {
+                        __amber_list_t* l = (__amber_list_t*)val;
+                        char* res = "[";
+                        for (int i = 0; i < l->length; i++) {
+                            res = __amber_rt_str_concat(res, __amber_rt_to_string(l->data[i]));
+                            if (i < l->length - 1) res = __amber_rt_str_concat(res, ", ");
+                        }
+                        res = __amber_rt_str_concat(res, "]");
+                        return res;
+                    }
+
                     char* __amber_rt_to_string(void* val) {
                         if (!val) return "null";
                         __amber_header_t* h = (__amber_header_t*)val;
-                        if (h->type == &__amber_type_double) {
-                            return __amber_rt_from_num(__amber_rt_unbox_double(val));
-                        }
-                        if (h->type == &__amber_type_bool) {
-                            return __amber_rt_unbox_bool(val) ? "true" : "false";
-                        }
-                        if (h->type == &__amber_type_string) {
-                            return __amber_rt_unbox_string(val);
-                        }
-                        if (h->type->variant_count > 0) {
-                            __amber_box_enum_t* e = (__amber_box_enum_t*)val;
-                            if (e->value >= 0 && e->value < h->type->variant_count) {
-                                return (char*)h->type->variants[e->value];
-                            }
-                        }
-                        if (h->type == &__amber_type_list) {
-                            __amber_list_t* l = (__amber_list_t*)val;
-                            char* res = "[";
-                            for (int i = 0; i < l->length; i++) {
-                                res = __amber_rt_str_concat(res, __amber_rt_to_string(l->data[i]));
-                                if (i < l->length - 1) res = __amber_rt_str_concat(res, ", ");
-                            }
-                            res = __amber_rt_str_concat(res, "]");
-                            return res;
+                        if (h->type && h->type->to_string) {
+                            return h->type->to_string(val);
                         }
                         return (char*)val;
                     }
