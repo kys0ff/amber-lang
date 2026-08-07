@@ -112,6 +112,7 @@ class TypeChecker(
         if (existing != null) {
             if (existing.line == symbol.line && existing.column == symbol.column) {
                 // Same symbol being re-defined (e.g. during pre-pass or multi-pass analysis)
+                existing.type = symbol.type
                 if (node is Expression) {
                     resolvedSymbols[node] = existing
                 }
@@ -185,6 +186,11 @@ class TypeChecker(
     fun hasErrors(): Boolean = errors.any { it.severity == DiagnosticSeverity.ERROR }
 
     private fun visitProgram(program: Program) {
+        // Pass 0: Resolve imports early
+        program.statements.filterIsInstance<ImportStatement>().forEach {
+            visitImportStatement(it)
+        }
+
         // Pass 1: Register top-level symbols (Enums, Structs, and Function signatures)
         program.statements.forEach {
             when (it) {
@@ -457,7 +463,7 @@ class TypeChecker(
             is ContinueStatement -> visitContinueStatement(statement)
             is FunctionDeclaration -> visitFunctionDeclaration(statement)
             is ReturnStatement -> visitReturnStatement(statement)
-            is ImportStatement -> visitImportStatement(statement)
+            is ImportStatement -> { /* Already handled in Pass 0 */ }
         }
     }
 

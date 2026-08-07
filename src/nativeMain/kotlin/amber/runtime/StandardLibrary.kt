@@ -246,11 +246,14 @@ object StandardLibrary {
                     char* __amber_rt_bool_to_string(void* val) {
                         return __amber_rt_unbox_bool(val) ? "true" : "false";
                     }
-                    char* __amber_rt_char_to_string(void* val) {
+                    char* __amber_rt_char_to_string_direct(char c) {
                         char* buf = (char*)__amber_rt_alloc(2);
-                        buf[0] = __amber_rt_unbox_char(val);
+                        buf[0] = c;
                         buf[1] = '\0';
                         return buf;
+                    }
+                    char* __amber_rt_char_to_string(void* val) {
+                        return __amber_rt_char_to_string_direct(__amber_rt_unbox_char(val));
                     }
                     char* __amber_rt_string_to_string(void* val) {
                         return __amber_rt_unbox_string(val);
@@ -307,6 +310,30 @@ object StandardLibrary {
                         memcpy(res, s1, len1);
                         memcpy(res + len1, s2, len2);
                         res[len1 + len2] = '\0';
+                        return res;
+                    }
+
+                    char* __amber_rt_str_concat_multi(int count, ...) {
+                        va_list args;
+                        va_start(args, count);
+                        size_t total_len = 0;
+                        char** strings = (char**)__amber_rt_alloc(sizeof(char*) * count);
+                        for (int i = 0; i < count; i++) {
+                            strings[i] = va_arg(args, char*);
+                            if (strings[i]) total_len += strlen(strings[i]);
+                        }
+                        va_end(args);
+
+                        char* res = (char*)__amber_rt_alloc(total_len + 1);
+                        char* p = res;
+                        for (int i = 0; i < count; i++) {
+                            if (strings[i]) {
+                                size_t len = strlen(strings[i]);
+                                memcpy(p, strings[i], len);
+                                p += len;
+                            }
+                        }
+                        *p = '\0';
                         return res;
                     }
                 """.trimIndent()

@@ -105,4 +105,78 @@ class ControlFlowExtendedTest {
         """.trimIndent()
         assertNoErrors(source)
     }
+
+    @Test
+    fun testStringIndexingInference() {
+        val source = """
+            use "core:io"
+            val name = "Amber"
+            val fl = name[0]
+        """.trimIndent()
+        assertNoErrors(source)
+    }
+
+    @Test
+    fun testStringIndexingWithReadln() {
+        val source = """
+            use "core:io"
+            val name = io.readln()
+            val fl = name[0]
+        """.trimIndent()
+        assertNoErrors(source)
+    }
+
+    @Test
+    fun testLoopWithContinueAndBreak() {
+        val source = """
+            use "core:io"
+            func main() {
+                var i = 0
+                while (i < 10) {
+                    i = i + 1
+                    if (i < 5) { continue }
+                    if (i > 8) { break }
+                    io.println("i: " + i)
+                }
+            }
+        """.trimIndent()
+        assertNoErrors(source)
+    }
+
+    @Test
+    fun testForLoopWithIndexAndReturn() {
+        val source = """
+            func find_first_even(nums: list<num>): num {
+                for (i, n in nums) {
+                    if (n % 2 == 0) { return i }
+                }
+                return -1
+            }
+        """.trimIndent()
+        assertNoErrors(source)
+    }
+
+    @Test
+    fun testOrPanicWithCustomMessage() {
+        val source = """
+            use "core:list"
+            func main() {
+                val l = [1]
+                val _ = list.get_or_err(l, 10) or panic "Custom Error"
+            }
+        """.trimIndent()
+        assertNoErrors(source)
+    }
+
+    @Test
+    fun testOrPanicDiverging() {
+        val source = """
+            use "core:list"
+            func test(): num {
+                val l = [1]
+                return list.get_or_err(l, 0) or panic
+            }
+        """.trimIndent()
+        assertNoErrors(source)
+    }
 }

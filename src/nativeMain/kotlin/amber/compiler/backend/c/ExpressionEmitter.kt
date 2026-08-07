@@ -441,10 +441,12 @@ class ExpressionEmitter(
             emitSegment(segments[0])
             return
         }
-        writer.write("__amber_rt_str_concat(")
-        emitSegment(segments[0])
-        writer.write(", ")
-        emitStringTemplate(segments.drop(1))
+        writer.write("__amber_rt_str_concat_multi(")
+        writer.write("${segments.size}, ")
+        segments.forEachIndexed { index, segment ->
+            emitSegment(segment)
+            if (index < segments.size - 1) writer.write(", ")
+        }
         writer.write(")")
     }
 
@@ -486,12 +488,31 @@ class ExpressionEmitter(
 
     private fun emitSegment(expr: Expression) {
         val type = expressionTypes[expr] ?: Type.Any
-        if (type == Type.String) {
-            emit(expr)
-        } else {
-            writer.write("__amber_rt_to_string(")
-            emit(expr, Type.Any)
-            writer.write(")")
+        when (type) {
+            Type.String -> emit(expr)
+            Type.Number -> {
+                writer.write("__amber_rt_from_num(")
+                emitRaw(expr)
+                writer.write(")")
+            }
+
+            Type.Char -> {
+                writer.write("__amber_rt_char_to_string_direct(")
+                emitRaw(expr)
+                writer.write(")")
+            }
+
+            Type.Boolean -> {
+                writer.write("(__amber_rt_unbox_bool(")
+                emitRaw(expr)
+                writer.write(") ? \"true\" : \"false\")")
+            }
+
+            else -> {
+                writer.write("__amber_rt_to_string(")
+                emit(expr, Type.Any)
+                writer.write(")")
+            }
         }
     }
 }
