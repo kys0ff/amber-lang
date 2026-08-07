@@ -12,10 +12,15 @@ enum class GCType {
     BOEHM, NONE
 }
 
+enum class CompilerCommand {
+    BUILD, FORMAT
+}
+
 /**
  * Configuration options for the Amber compiler.
  */
 data class CompilerConfig(
+    val command: CompilerCommand = CompilerCommand.BUILD,
     val projectRoot: String,
     val entryFile: String,
     val isProject: Boolean = false,
@@ -34,6 +39,7 @@ data class CompilerConfig(
 )
 
 class CompilerConfigBuilder {
+    var command: CompilerCommand = CompilerCommand.BUILD
     var projectRoot: String = "."
     var entryFile: String = "main.amb"
     var isProject: Boolean = false
@@ -51,6 +57,7 @@ class CompilerConfigBuilder {
     var executableDir: String = "."
 
     fun build() = CompilerConfig(
+        command = command,
         projectRoot = projectRoot,
         entryFile = entryFile,
         isProject = isProject,

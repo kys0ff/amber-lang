@@ -1,6 +1,5 @@
 # Standard input/output module
 # Provides functions for interacting with the console and terminal.
-
 ##
 # Prints the given value to the standard output.
 intrinsic func print(value: any)

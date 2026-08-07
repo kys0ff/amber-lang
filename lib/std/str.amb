@@ -1,6 +1,4 @@
 # String utilities module
-
-
 ##
 # Converts any value to its string representation.
 intrinsic func to_string(value: any): string

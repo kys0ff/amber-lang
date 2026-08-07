@@ -14,6 +14,7 @@ import platform.posix.fread
 import platform.posix.fseek
 import platform.posix.ftell
 import platform.posix.rewind
+import platform.posix.fputs
 
 @OptIn(ExperimentalForeignApi::class, UnsafeNumber::class)
 fun readFile(path: String): String {
@@ -26,10 +27,20 @@ fun readFile(path: String): String {
 
         return memScoped {
             val buffer = allocArray<ByteVar>(size + 1)
-            fread(buffer, 1u,size.toULong(), file)
+            fread(buffer, 1u, size.toULong(), file)
             buffer[size] = 0
             buffer.toKString()
         }
+    } finally {
+        fclose(file)
+    }
+}
+
+@OptIn(ExperimentalForeignApi::class, UnsafeNumber::class)
+fun writeFile(path: String, content: String) {
+    val file = fopen(path, "w") ?: return
+    try {
+        fputs(content, file)
     } finally {
         fclose(file)
     }

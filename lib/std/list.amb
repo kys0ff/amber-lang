@@ -1,5 +1,4 @@
 # List utilities module
-
 ##
 # Returns the num of elements in a list.
 intrinsic func len(l: any[]): num

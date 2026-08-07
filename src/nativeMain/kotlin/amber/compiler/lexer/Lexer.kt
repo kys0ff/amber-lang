@@ -12,21 +12,23 @@ class Lexer(private val source: String) {
     private val singleCharOperators = setOf("+", "-", "*", "/", "%", "=", "!", "<", ">")
     private val operatorStarters = setOf('+', '-', '*', '/', '%', '=', '!', '<', '>', '&', '|')
 
-    fun tokenize(): List<Token> {
+    fun tokenize(keepTrivia: Boolean = false): List<Token> {
         val tokens = mutableListOf<Token>()
-        var token = nextToken()
+        var token = nextToken(keepTrivia)
         while (token !is Token.EOF) {
-            if (token !is Token.Whitespace && token !is Token.Comment) {
+            if (keepTrivia || (token !is Token.Whitespace && token !is Token.Comment)) {
                 tokens.add(token)
             }
-            token = nextToken()
+            token = nextToken(keepTrivia)
         }
         tokens.add(token)
         return tokens
     }
 
-    fun nextToken(): Token {
-        skipWhitespaceAndComments()
+    fun nextToken(keepTrivia: Boolean = false): Token {
+        if (!keepTrivia) {
+            skipWhitespaceAndComments()
+        }
 
         if (state.position >= source.length) {
             return Token.EOF(state.line, state.column)
@@ -36,7 +38,42 @@ class Lexer(private val source: String) {
         val startColumn = state.column
         val actualChar = source[state.position]
 
-        if (actualChar == '\n') {
+        if (keepTrivia) {
+            when (actualChar) {
+                ' ', '\t', '\r' -> {
+                    val start = state.position
+                    while (state.position < source.length && (source[state.position] == ' ' || source[state.position] == '\t' || source[state.position] == '\r')) {
+                        state.position++
+                        state.column++
+                    }
+                    return Token.Whitespace(source.substring(start, state.position), startLine, startColumn)
+                }
+                '\n' -> {
+                    state.position++
+                    state.line++
+                    state.column = 1
+                    return Token.Newline("\n", startLine, startColumn)
+                }
+                '#' -> {
+                    val start = state.position
+                    while (state.position < source.length && source[state.position] != '\n') {
+                        state.position++
+                        state.column++
+                    }
+                    return Token.Comment(source.substring(start, state.position), startLine, startColumn)
+                }
+                '/' -> {
+                    if (state.position + 1 < source.length && source[state.position + 1] == '/') {
+                        val start = state.position
+                        while (state.position < source.length && source[state.position] != '\n') {
+                            state.position++
+                            state.column++
+                        }
+                        return Token.Comment(source.substring(start, state.position), startLine, startColumn)
+                    }
+                }
+            }
+        } else if (actualChar == '\n') {
             state.position++
             state.line++
             state.column = 1

@@ -1,5 +1,6 @@
 package amber.cli
 
+import amber.compiler.CompilerCommand
 import amber.compiler.CompilerConfig
 import amber.compiler.Transpiler
 import amber.compiler.backend.NativeCompileResult
@@ -7,6 +8,7 @@ import amber.compiler.backend.NativeDiagnosticSeverity
 import amber.compiler.backend.tinycc.TccCompiler
 import amber.compiler.diagnostic.DiagnosticFormatter
 import amber.compiler.diagnostic.DiagnosticSeverity
+import amber.compiler.formatter.ProjectFormatter
 import amber.util.Ansi
 import amber.util.ConsoleLogger
 import amber.util.LogLevel
@@ -14,6 +16,7 @@ import amber.util.Logger
 import amber.util.NoLogger
 import amber.util.ensureDirectoryExists
 import amber.util.fileExists
+import amber.util.isDirectory
 import amber.util.joinPaths
 import amber.util.readFile
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -45,6 +48,11 @@ class CompilerRunner(private val config: CompilerConfig) {
 
     @OptIn(ExperimentalForeignApi::class)
     fun run(scriptArgs: List<String>) {
+        if (config.command == CompilerCommand.FORMAT) {
+            handleFormat()
+            return
+        }
+
         val timeSource = if (config.benchmark) TimeSource.Monotonic else null
         val totalStartTime = timeSource?.markNow()
 
@@ -181,6 +189,44 @@ class CompilerRunner(private val config: CompilerConfig) {
         }
     }
 
+    private fun handleFormat() {
+        val projectFormatter = ProjectFormatter()
+        var target = config.entryFile
+
+        // If a "project" file is specified, format the directory containing it as a project.
+        if (!isDirectory(target)) {
+            val fileName = target.substringAfterLast('/').substringAfterLast('\\')
+            if (fileName == "project") {
+                target = amber.util.getPathParent(target) ?: "."
+            }
+        }
+        
+        if (isDirectory(target)) {
+            logger.info("Formatting project at $target...")
+            val summary = projectFormatter.formatProject(target)
+            
+            println("\n${Ansi.bold("Formatting Summary:")}")
+            println("  Files formatted      : ${summary.filesFormatted}")
+            println("  Files unchanged      : ${summary.filesUnchanged}")
+            println("  Files skipped        : ${summary.filesSkipped}")
+            if (summary.filesWithErrors > 0) {
+                println("  Files with errors    : ${Ansi.red(summary.filesWithErrors.toString())}")
+            } else {
+                println("  Files with errors    : 0")
+            }
+        } else {
+            logger.info("Formatting file $target...")
+            val result = projectFormatter.formatFile(target)
+            when (result) {
+                ProjectFormatter.FileFormattingResult.Formatted -> logger.info(Ansi.green("Formatted $target"))
+                ProjectFormatter.FileFormattingResult.Unchanged -> logger.info("File already formatted")
+                ProjectFormatter.FileFormattingResult.Error -> {
+                    logger.error("Failed to format $target")
+                    exitProcess(1)
+                }
+            }
+        }
+    }
 
     @OptIn(ExperimentalForeignApi::class)
     private fun writeTextFile(path: String, content: String) {

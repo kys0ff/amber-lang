@@ -1,6 +1,7 @@
 package amber.cli
 
 import amber.compiler.BackendType
+import amber.compiler.CompilerCommand
 import amber.compiler.CompilerConfig
 import amber.compiler.GCType
 import amber.compiler.OptimizationLevel
@@ -27,9 +28,12 @@ private val VALUE_FLAGS = setOf("--output", "-o", "--emit-c")
 
 class CliParser {
     fun parse(args: Array<String>): CompilerConfig {
+        if (args.getOrNull(0) == "fmt") {
+            return parseFmt(args.drop(1))
+        }
+
         val dashDashIndex = args.indexOf("--")
         val compilerArgs = if (dashDashIndex != -1) args.slice(0 until dashDashIndex) else args.toList()
-        // scriptArgs can be handled by the runner if needed, but CompilerConfig doesn't hold them yet
         
         var target: String? = null
         var output: String? = null
@@ -80,10 +84,10 @@ class CliParser {
         }
 
         val absoluteTarget = normalizePath(target ?: ".")
-        // The project file parsing logic will be in the runner or a ProjectLoader
         
         return compilerConfig {
-            projectRoot = "." // Will be updated by runner
+            command = CompilerCommand.BUILD
+            projectRoot = "."
             entryFile = absoluteTarget
             outputName = output
             this.emitC = emitC
@@ -100,6 +104,32 @@ class CliParser {
         }
     }
 
+    private fun parseFmt(args: List<String>): CompilerConfig {
+        var target: String? = null
+        val flags = mutableSetOf<String>()
+
+        args.forEach { arg ->
+            if (arg.startsWith("-")) {
+                flags += arg
+            } else if (target == null) {
+                target = arg
+            }
+        }
+
+        if ("--help" in flags || "-h" in flags) {
+            printHelp()
+            exitProcess(0)
+        }
+
+        val absoluteTarget = normalizePath(target ?: ".")
+
+        return compilerConfig {
+            command = CompilerCommand.FORMAT
+            entryFile = absoluteTarget
+            useColor = "--no-color" !in flags
+        }
+    }
+
     private fun printError(message: String) {
         println(Ansi.red(Ansi.bold("error:")) + " $message")
     }
@@ -108,7 +138,10 @@ class CliParser {
         println(
             """
             ${Ansi.bold("Amber Compiler CLI")}
-            ${Ansi.dim("Usage:")} amber [options] [path] [-- script_args]
+            ${Ansi.dim("Usage:")} amber [command] [options] [path] [-- script_args]
+    
+            ${Ansi.bold("Commands")}
+              fmt [path]          Format Amber source files
     
             ${Ansi.bold("path")}
               Path to a .amb script, or a directory containing a 'project' file.
@@ -128,6 +161,19 @@ class CliParser {
               -q, --quiet         Suppress the build summary line
                   --no-color      Disable ANSI color output (see also NO_COLOR)
                   --              Separator indicating all subsequent flags belong to the script
+
+            ${Ansi.bold("Formatting")}
+              amber fmt
+                  Format the current project.
+          
+              amber fmt <file>
+                  Format a single Amber source file.
+          
+              amber fmt <directory>
+                  Recursively format an Amber project.
+
+              amber fmt project
+                  Format the project defined by the 'project' file.
             """.trimIndent()
         )
     }

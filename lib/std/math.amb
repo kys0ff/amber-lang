@@ -1,5 +1,4 @@
 # Mathematical constants and functions
-
 ##
 # The mathematical constant pi.
 val pi = 3.141592653589793

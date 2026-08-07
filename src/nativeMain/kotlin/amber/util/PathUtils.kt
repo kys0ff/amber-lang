@@ -20,12 +20,35 @@ import platform.posix.mkdir
 import platform.posix.readlink
 import platform.posix.stat
 
+import kotlinx.cinterop.pointed
+import platform.posix.closedir
+import platform.posix.opendir
+import platform.posix.readdir
+
 fun getPathParent(path: String): String? {
-    val lastSeparator = path.lastIndexOf('/')
+    val lastSeparator = maxOf(path.lastIndexOf('/'), path.lastIndexOf('\\'))
     if (lastSeparator == -1) {
         return null // No parent directory
     }
     return path.substring(0, lastSeparator)
+}
+
+@OptIn(ExperimentalForeignApi::class)
+fun listFiles(path: String): List<String> {
+    val files = mutableListOf<String>()
+    val dir = opendir(path) ?: return emptyList()
+    try {
+        while (true) {
+            val entry = readdir(dir) ?: break
+            val name = entry.pointed.d_name.toKString()
+            if (name != "." && name != "..") {
+                files.add(name)
+            }
+        }
+    } finally {
+        closedir(dir)
+    }
+    return files
 }
 
 fun joinPaths(base: String, vararg parts: String): String {
@@ -52,7 +75,8 @@ fun normalizePath(path: String): String {
         }
     }
     val normalized = stack.joinToString("/")
-    return if (path.startsWith("/")) "/$normalized" else normalized
+    val result = if (path.startsWith("/")) "/$normalized" else normalized
+    return if (result.isEmpty()) "." else result
 }
 
 @OptIn(ExperimentalForeignApi::class)
