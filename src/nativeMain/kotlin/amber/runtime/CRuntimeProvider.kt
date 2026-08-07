@@ -3,9 +3,7 @@ package amber.runtime
 import amber.compiler.symbol.Symbol
 
 class CRuntimeProvider : RuntimeProvider {
-    override fun getBuiltInSymbols(): Map<String, Symbol> {
-        return emptyMap()
-    }
+    override fun getBuiltInSymbols(): Map<String, Symbol> = StandardLibrary.getBuiltInSymbols()
 
     override fun getAllIntrinsicSymbols(): Map<String, Symbol> = StandardLibrary.getAllSymbols()
 

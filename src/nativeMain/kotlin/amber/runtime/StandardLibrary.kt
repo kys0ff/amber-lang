@@ -294,7 +294,9 @@ object StandardLibrary {
     }
 
     fun getIntrinsic(qualifiedName: String): Intrinsic? = intrinsics[qualifiedName]
-    
+
+    fun getBuiltInSymbols(): Map<String, Symbol> = getAllSymbols().filter { it.value.namespace == null }
+
     fun getAllSymbols(): Map<String, Symbol> = intrinsics.mapValues { (_, intr) ->
         Symbol(
             intr.name,

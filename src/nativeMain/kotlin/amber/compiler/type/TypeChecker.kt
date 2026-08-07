@@ -64,10 +64,7 @@ class TypeChecker(
     val importedModuleTypeCheckers = mutableMapOf<String, TypeChecker>()
 
     init {
-        // Need to adapt runtimeProvider to use new Type system
-        // For now, I'll assume it's been refactored, or I'll need a mapper
-        // Actually, let's keep it simple and refactor RuntimeProvider later
-        val globalScope = SymbolTable(initialSymbols = emptyMap()) // placeholder
+        val globalScope = SymbolTable(initialSymbols = runtimeProvider.getBuiltInSymbols())
         currentScope = globalScope.enterScope()
     }
 
@@ -727,14 +724,6 @@ class TypeChecker(
             resolvedSymbols[identifier] = symbol
             return symbol.type
         } else {
-            if (identifier.isSynthetic) {
-                val intrinsicSymbol = runtimeProvider.getAllIntrinsicSymbols()[identifier.name]
-                if (intrinsicSymbol != null) {
-                    resolvedSymbols[identifier] = intrinsicSymbol
-                    return intrinsicSymbol.type
-                }
-            }
-
             if (identifier.name == "to_string" && !identifier.isSynthetic) {
                 reportError(
                     identifier,
