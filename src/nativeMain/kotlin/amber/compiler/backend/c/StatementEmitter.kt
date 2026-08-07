@@ -209,8 +209,38 @@ class StatementEmitter(
                 writer.writeLine("} $boxName;")
 
                 val toStringFunc = symbolEmitter.mangle("${structName}_to_string", ns)
-                writer.writeLine("static char* $toStringFunc(void* val) { return \"$structName\"; }")
-
+                writer.writeLine("static char* $toStringFunc(void* val) {")
+                writer.indent()
+                writer.writeLine("$boxName* b = ($boxName*)val;")
+                writer.writeLine("char* res = \"$structName { \";")
+                structType?.fields?.values?.forEachIndexed { index, field ->
+                    writer.write("res = __amber_rt_str_concat(res, \"${field.name}: \");")
+                    val boxFunc = when (field.type) {
+                        Type.Number -> "__amber_rt_box_double"
+                        Type.Boolean -> "__amber_rt_box_bool"
+                        Type.String -> "__amber_rt_box_string"
+                        is Type.Enum -> "__amber_rt_box_enum" // Simplified, needs type descriptor
+                        is Type.Struct -> "__amber_rt_box_${symbolEmitter.mangle(field.type.name, field.type.namespace)}"
+                        else -> ""
+                    }
+                    if (boxFunc.isNotEmpty()) {
+                        if (field.type is Type.Enum) {
+                            writer.write("res = __amber_rt_str_concat(res, __amber_rt_to_string($boxFunc(b->value.${field.name}, &${symbolEmitter.mangle("type_${field.type.name}", field.type.moduleNamespace)})));")
+                        } else {
+                            writer.write("res = __amber_rt_str_concat(res, __amber_rt_to_string($boxFunc(b->value.${field.name})));")
+                        }
+                    } else {
+                        writer.write("res = __amber_rt_str_concat(res, __amber_rt_to_string(b->value.${field.name}));")
+                    }
+                    if (index < structType.fields.size - 1) {
+                        writer.write("res = __amber_rt_str_concat(res, \", \");")
+                    }
+                }
+                writer.writeLine("res = __amber_rt_str_concat(res, \" }\");")
+                writer.writeLine("return res;")
+                writer.dedent()
+                writer.writeLine("}")
+                writer.writeLine()
                 writer.writeLine("__amber_type_t ${symbolEmitter.mangle("type_$structName", ns)} = { \"$structName\", ${200 + (ns ?: "").hashCode() + structName.hashCode()}, NULL, 0, $toStringFunc };")
 
                 writer.writeLine("static inline void* __amber_rt_box_$mangledName($mangledName v) {")

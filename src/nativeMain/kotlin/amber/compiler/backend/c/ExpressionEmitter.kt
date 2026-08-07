@@ -138,14 +138,13 @@ class ExpressionEmitter(
                     emitSegment(expression.right)
                     writer.write(")")
                 } else if (expression.operator == "+" && (leftType is Type.ArrayList || leftType is Type.List)) {
-                    val elementType = if (leftType is Type.ArrayList) leftType.elementType else (leftType as Type.List).elementType
                     writer.write("({ ")
                     writer.write("${typeMapper.map(leftType)} _l = ")
                     emit(expression.left)
                     writer.write("; ")
                     writer.write(symbolEmitter.runtimeHelper("list_push"))
                     writer.write("(_l, ")
-                    emit(expression.right, elementType)
+                    emit(expression.right, Type.Any)
                     writer.write("); _l; })")
                 } else if ((expression.operator == "==" || expression.operator == "!=") && leftType == Type.String) {
                     if (expression.operator == "!=") writer.write("!")
@@ -214,12 +213,32 @@ class ExpressionEmitter(
                     } else {
                         writer.write(name)
                     }
+                    writer.write(" = ")
+                    val targetType = expressionTypes[target] ?: Type.Any
+                    emit(expression.value, targetType)
+                } else if (target is IndexAccessExpression) {
+                    val targetType = expressionTypes[target.target]
+                    if (targetType is Type.List || targetType is Type.ArrayList || targetType == Type.Any) {
+                        writer.write(symbolEmitter.runtimeHelper("list_set"))
+                        writer.write("(")
+                        emit(target.target)
+                        writer.write(", ")
+                        emit(target.index)
+                        writer.write(", ")
+                        emit(expression.value, Type.Any)
+                        writer.write(")")
+                    } else {
+                        emitRaw(target)
+                        writer.write(" = ")
+                        val valType = expressionTypes[target] ?: Type.Any
+                        emit(expression.value, valType)
+                    }
                 } else {
                     emitRaw(target)
+                    writer.write(" = ")
+                    val targetType = expressionTypes[target] ?: Type.Any
+                    emit(expression.value, targetType)
                 }
-                writer.write(" = ")
-                val targetType = expressionTypes[target] ?: Type.Any
-                emit(expression.value, targetType)
             }
             is MemberAccessExpression -> {
                 val targetType = expressionTypes[expression.target]
@@ -252,6 +271,7 @@ class ExpressionEmitter(
                     is Type.Boolean -> "&__amber_type_bool"
                     is Type.List, is Type.ArrayList -> "&__amber_type_list"
                     is Type.Enum -> "&${symbolEmitter.mangle("type_${targetType.name}", targetType.moduleNamespace)}"
+                    is Type.Struct -> "&${symbolEmitter.mangle("type_${targetType.name}", targetType.namespace)}"
                     else -> "NULL"
                 }
                 writer.write("__amber_rt_is_type(")

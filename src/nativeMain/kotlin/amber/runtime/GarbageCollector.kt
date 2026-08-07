@@ -9,6 +9,7 @@ sealed interface GarbageCollector {
 
     fun malloc(size: String): String
     fun mallocAtomic(size: String): String
+    fun realloc(pointer: String, size: String): String
     fun registerRoot(pointer: String): String
 }
 
@@ -21,6 +22,7 @@ object BoehmGC : GarbageCollector {
 
     override fun malloc(size: String) = "GC_MALLOC($size)"
     override fun mallocAtomic(size: String) = "GC_MALLOC_ATOMIC($size)"
+    override fun realloc(pointer: String, size: String) = "GC_REALLOC($pointer, $size)"
     override fun registerRoot(pointer: String) = "GC_add_roots($pointer, $pointer + 1)"
 }
 
@@ -33,5 +35,6 @@ object NoGC : GarbageCollector {
 
     override fun malloc(size: String) = "malloc($size)"
     override fun mallocAtomic(size: String) = "malloc($size)"
+    override fun realloc(pointer: String, size: String) = "realloc($pointer, $size)"
     override fun registerRoot(pointer: String) = ""
 }

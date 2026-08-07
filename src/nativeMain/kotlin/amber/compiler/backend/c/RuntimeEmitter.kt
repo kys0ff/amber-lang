@@ -127,6 +127,15 @@ class RuntimeEmitter(
         writer.dedent()
         writer.writeLine("}")
         writer.writeLine()
+        
+        writer.writeLine("static inline void* __amber_rt_realloc(void* ptr, size_t size) {")
+        writer.indent()
+        writer.writeLine("void* new_ptr = ${gc.realloc("ptr", "size")};")
+        writer.writeLine("if (!new_ptr) { fprintf(stderr, \"Out of memory\\n\"); exit(1); }")
+        writer.writeLine("return new_ptr;")
+        writer.dedent()
+        writer.writeLine("}")
+        writer.writeLine()
 
         writer.writeLine("""
             static inline struct AMBER_RESULT __amber_rt_result_success(void* val) {

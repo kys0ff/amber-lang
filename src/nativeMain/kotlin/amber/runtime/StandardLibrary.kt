@@ -164,9 +164,7 @@ object StandardLibrary {
                             if (!l) return;
                             if (l->length >= l->capacity) {
                                 l->capacity = l->capacity == 0 ? 4 : l->capacity * 2;
-                                void** new_data = (void**)__amber_rt_alloc(sizeof(void*) * l->capacity);
-                                if (l->data) memcpy(new_data, l->data, sizeof(void*) * l->length);
-                                l->data = new_data;
+                                l->data = (void**)__amber_rt_realloc(l->data, sizeof(void*) * l->capacity);
                             }
                             l->data[l->length++] = val;
                         }
@@ -189,6 +187,16 @@ object StandardLibrary {
                             return l->data[i];
                         }
                     """.trimIndent())
+                
+                func("set", listOf(Type.List(Type.Any), Type.Number, Type.Any), Type.Unit, "list_set",
+                    isMutated = listOf(true, false, false),
+                    cImpl = """
+                        void __amber_rt_list_set(__amber_list_t* l, double idx, void* val) {
+                            int i = (int)idx;
+                            if (!l || i < 0 || i >= l->length) return;
+                            l->data[i] = val;
+                        }
+                    """.trimIndent())
             }
 
             // Core Internal Helpers
@@ -206,12 +214,30 @@ object StandardLibrary {
                     }
                     char* __amber_rt_list_to_string(void* val) {
                         __amber_list_t* l = (__amber_list_t*)val;
-                        char* res = "[";
+                        if (l->length == 0) return "[]";
+                        
+                        size_t total_len = 2; // "[" and "]"
+                        char** strings = (char**)__amber_rt_alloc(sizeof(char*) * l->length);
                         for (int i = 0; i < l->length; i++) {
-                            res = __amber_rt_str_concat(res, __amber_rt_to_string(l->data[i]));
-                            if (i < l->length - 1) res = __amber_rt_str_concat(res, ", ");
+                            strings[i] = __amber_rt_to_string(l->data[i]);
+                            total_len += strlen(strings[i]);
+                            if (i < l->length - 1) total_len += 2; // ", "
                         }
-                        res = __amber_rt_str_concat(res, "]");
+                        
+                        char* res = (char*)__amber_rt_alloc(total_len + 1);
+                        char* p = res;
+                        *p++ = '[';
+                        for (int i = 0; i < l->length; i++) {
+                            size_t slen = strlen(strings[i]);
+                            memcpy(p, strings[i], slen);
+                            p += slen;
+                            if (i < l->length - 1) {
+                                *p++ = ',';
+                                *p++ = ' ';
+                            }
+                        }
+                        *p++ = ']';
+                        *p = '\0';
                         return res;
                     }
 
