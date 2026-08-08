@@ -182,12 +182,23 @@ class ExpressionEmitter(
 
                 val calleeSymbol = resolvedSymbols[expression.callee]
                 val functionType = calleeSymbol?.type as? Type.Function
+                val isExtension = calleeSymbol?.isExtension == true
                 
                 emit(expression.callee)
                 writer.write("(")
+                
+                if (isExtension && functionType != null) {
+                    val receiver = (expression.callee as? MemberAccessExpression)?.target
+                    if (receiver != null) {
+                        emit(receiver, functionType.parameterTypes[0])
+                        if (expression.arguments.isNotEmpty()) writer.write(", ")
+                    }
+                }
+
                 expression.arguments.forEachIndexed { index, arg ->
-                    val paramType = functionType?.parameterTypes?.getOrNull(index) ?: Type.Any
-                    val isMutated = functionType?.isParameterMutated?.getOrNull(index) ?: false
+                    val mutationIndex = if (isExtension) index + 1 else index
+                    val paramType = functionType?.parameterTypes?.getOrNull(mutationIndex) ?: Type.Any
+                    val isMutated = functionType?.isParameterMutated?.getOrNull(mutationIndex) ?: false
                     
                     if (isMutated && isPrimitive(paramType)) {
                         writer.write("&")
@@ -423,7 +434,13 @@ class ExpressionEmitter(
         if (platformName != null) {
             writer.write(symbolEmitter.runtimeHelper(platformName))
         } else {
-            val name = symbolEmitter.mangle(symbol.name, symbol.namespace)
+            val name = if (symbol.isExtension) {
+                val funcType = symbol.type as Type.Function
+                symbolEmitter.mangleExtension(symbol.name, funcType.parameterTypes[0], symbol.namespace)
+            } else {
+                symbolEmitter.mangle(symbol.name, symbol.namespace)
+            }
+
             if (symbol.isParameter && symbol.isMutated && isPrimitive(symbol.type)) {
                 writer.write("(*$name)")
             } else {

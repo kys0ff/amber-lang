@@ -6,6 +6,7 @@ import amber.compiler.ast.ContinueStatement
 import amber.compiler.ast.EnumDeclaration
 import amber.compiler.ast.Expression
 import amber.compiler.ast.ExpressionStatement
+import amber.compiler.ast.ExtensionDeclaration
 import amber.compiler.ast.ForStatement
 import amber.compiler.ast.FunctionDeclaration
 import amber.compiler.ast.IfStatement
@@ -68,18 +69,34 @@ class StatementEmitter(
 
             is FunctionDeclaration -> {
                 val symbol = resolvedSymbols[statement.name]
-                val returnType = (symbol?.type as? Type.Function)?.returnType ?: Type.Unit
+                val functionType = symbol?.type as? Type.Function
+                val returnType = functionType?.returnType ?: Type.Unit
+                val isExtension = symbol?.isExtension == true
 
                 val cReturnType = typeMapper.map(returnType)
-                val name = symbol?.let { symbolEmitter.mangle(it.name, it.namespace) }
-                    ?: symbolEmitter.mangle(statement.name.name)
+                val name = symbol?.let {
+                    if (isExtension && functionType != null) {
+                        symbolEmitter.mangleExtension(it.name, functionType.parameterTypes[0], it.namespace)
+                    } else {
+                        symbolEmitter.mangle(it.name, it.namespace)
+                    }
+                } ?: symbolEmitter.mangle(statement.name.name)
                 writer.write("$cReturnType ${name}(")
+
+                if (isExtension && functionType != null) {
+                    val receiverType = functionType.parameterTypes[0]
+                    val isMutated = functionType.isParameterMutated.getOrElse(0) { false }
+                    writer.write("${typeMapper.mapParameter(receiverType, isMutated)} ${symbolEmitter.mangle("self")}")
+                    if (statement.parameters.isNotEmpty()) writer.write(", ")
+                }
+
                 statement.parameters.forEachIndexed { index, param ->
                     val paramSymbol = resolvedSymbols[param.name]
                     val paramType = paramSymbol?.type ?: Type.Any
                     val funcType = symbol?.type as? Type.Function
+                    val mutationIndex = if (isExtension) index + 1 else index
                     val isMutated =
-                        funcType?.isParameterMutated?.getOrElse(index) { false } ?: false
+                        funcType?.isParameterMutated?.getOrElse(mutationIndex) { false } ?: false
                     val paramName = paramSymbol?.let { symbolEmitter.mangle(it.name, it.namespace) }
                         ?: symbolEmitter.mangle(param.name.name)
                     writer.write("${typeMapper.mapParameter(paramType, isMutated)} $paramName")
@@ -290,6 +307,7 @@ class StatementEmitter(
                 writer.writeLine("}")
             }
 
+            is ExtensionDeclaration -> {}
             is ImportStatement -> {}
         }
     }

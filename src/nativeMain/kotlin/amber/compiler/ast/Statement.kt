@@ -8,6 +8,7 @@ sealed class Statement(
 class ImportStatement(
     val path: String,
     val asName: IdentifierExpression?,
+    val importedMember: String? = null,
     line: Int = -1,
     column: Int = -1,
 ) : Statement(line, column) {
@@ -24,6 +25,15 @@ class FunctionDeclaration(
     column: Int = -1,
 ) : Statement(line, column) {
     override val children: List<AstNode> get() = listOf(name) + parameters + listOfNotNull(body)
+}
+
+class ExtensionDeclaration(
+    val targetType: String,
+    val functions: List<FunctionDeclaration>,
+    line: Int = -1,
+    column: Int = -1,
+) : Statement(line, column) {
+    override val children: List<AstNode> get() = functions
 }
 
 class VariableDeclaration(

@@ -14,6 +14,7 @@ import amber.compiler.ast.EnumDeclaration
 import amber.compiler.ast.ErrorNode
 import amber.compiler.ast.Expression
 import amber.compiler.ast.ExpressionStatement
+import amber.compiler.ast.ExtensionDeclaration
 import amber.compiler.ast.ForStatement
 import amber.compiler.ast.FunctionDeclaration
 import amber.compiler.ast.IdentifierExpression
@@ -66,6 +67,9 @@ class TypeChecker(
 
     val importedModulePrograms = mutableMapOf<String, Program>()
     val importedModuleTypeCheckers = mutableMapOf<String, TypeChecker>()
+
+    val extensionRegistry = mutableMapOf<Type, MutableList<Symbol>>()
+    private val loadedPrimitiveExtensions = mutableSetOf<Type>()
 
     init {
         val globalScope = SymbolTable(initialSymbols = runtimeProvider.getBuiltInSymbols())
@@ -202,6 +206,11 @@ class TypeChecker(
             }
         }
 
+        // Pass 1.2: Register extensions
+        program.statements.filterIsInstance<ExtensionDeclaration>().forEach {
+            preRegisterExtension(it)
+        }
+
         // Pass 1.5: Resolve struct fields and check defaults
         program.statements.filterIsInstance<StructDeclaration>().forEach {
             resolveStructFields(it)
@@ -213,6 +222,10 @@ class TypeChecker(
         // Pass 2: Infer return types for all functions
         program.statements.filterIsInstance<FunctionDeclaration>()
             .forEach { inferFunctionReturnType(it) }
+        program.statements.filterIsInstance<ExtensionDeclaration>().forEach { ext ->
+            val receiverType = typeResolver.resolveType(ext.targetType, ext, currentScope)
+            ext.functions.forEach { inferFunctionReturnType(it, receiverType) }
+        }
 
         // Pass 2.5: Detect variable promotions to 'any'
         detectVariablePromotions(program)
@@ -368,18 +381,36 @@ class TypeChecker(
         }
     }
 
-    private fun inferFunctionReturnType(function: FunctionDeclaration) {
+    private fun inferFunctionReturnType(function: FunctionDeclaration, extensionReceiverType: Type? = null) {
         if (function.isIntrinsic || function.returnTypeAnnotation != null) return
 
-        val functionSymbol = currentScope.resolveLocal(function.name.name) ?: return
-        val paramTypes = (functionSymbol.type as Type.Function).parameterTypes
+        val functionSymbol = resolvedSymbols[function.name] ?: currentScope.resolveLocal(function.name.name) ?: return
+        val functionType = functionSymbol.type as? Type.Function ?: return
+        val isExtension = functionSymbol.isExtension || extensionReceiverType != null
+        val paramTypes = functionType.parameterTypes
 
         val inferenceScope = currentScope.enterScope()
+
+        val startIndex = if (isExtension) {
+            inferenceScope.define(
+                Symbol(
+                    "self",
+                    extensionReceiverType ?: paramTypes[0],
+                    isMutable = true,
+                    isParameter = true,
+                    isInitialized = true,
+                    line = function.name.line,
+                    column = function.name.column
+                )
+            )
+            1
+        } else 0
+
         function.parameters.forEachIndexed { index, param ->
             inferenceScope.define(
                 Symbol(
                     param.name.name,
-                    paramTypes[index],
+                    paramTypes[index + startIndex],
                     isMutable = true,
                     isParameter = true,
                     isInitialized = true,
@@ -417,6 +448,39 @@ class TypeChecker(
         functionSymbol.type = (functionSymbol.type as Type.Function).copy(returnType = inferredType)
     }
 
+    private fun preRegisterExtension(extension: ExtensionDeclaration) {
+        val receiverType = typeResolver.resolveType(extension.targetType, extension, currentScope)
+        if (receiverType == Type.Error) return
+
+        val list = extensionRegistry.getOrPut(receiverType) { mutableListOf() }
+
+        extension.functions.forEach { function ->
+            val paramTypes = mutableListOf(receiverType)
+            paramTypes.addAll(function.parameters.map { param ->
+                param.typeAnnotation?.let { typeResolver.resolveType(it, param, currentScope) }
+                    ?: Type.Any
+            })
+            val hasDefaultValues = mutableListOf(false)
+            hasDefaultValues.addAll(function.parameters.map { it.defaultValue != null })
+            val declaredReturnType = function.returnTypeAnnotation?.let {
+                typeResolver.resolveType(it, function, currentScope)
+            } ?: Type.Unit
+
+            val functionType = Type.Function(paramTypes, hasDefaultValues, declaredReturnType)
+            val extensionSymbol = Symbol(
+                function.name.name,
+                functionType,
+                isIntrinsic = function.isIntrinsic,
+                isExtension = true,
+                line = function.name.line,
+                column = function.name.column,
+                namespace = namespace
+            )
+            list.add(extensionSymbol)
+            resolvedSymbols[function.name] = extensionSymbol
+        }
+    }
+
     private fun preRegisterFunction(function: FunctionDeclaration) {
         val paramTypes = function.parameters.map { param ->
             param.typeAnnotation?.let { typeResolver.resolveType(it, param, currentScope) }
@@ -437,6 +501,7 @@ class TypeChecker(
             namespace = namespace
         )
         currentScope.define(functionSymbol)
+        resolvedSymbols[function.name] = functionSymbol
     }
 
     private fun isDeclaration(statement: Statement): Boolean {
@@ -444,7 +509,8 @@ class TypeChecker(
                 statement is FunctionDeclaration ||
                 statement is ImportStatement ||
                 statement is StructDeclaration ||
-                statement is EnumDeclaration
+                statement is EnumDeclaration ||
+                statement is ExtensionDeclaration
     }
 
     private fun visitStatement(statement: Statement, skipUnusedWarning: Boolean = false) {
@@ -462,6 +528,7 @@ class TypeChecker(
             is BreakStatement -> visitBreakStatement(statement)
             is ContinueStatement -> visitContinueStatement(statement)
             is FunctionDeclaration -> visitFunctionDeclaration(statement)
+            is ExtensionDeclaration -> visitExtensionDeclaration(statement)
             is ReturnStatement -> visitReturnStatement(statement)
             is ImportStatement -> { /* Already handled in Pass 0 */ }
         }
@@ -811,11 +878,11 @@ class TypeChecker(
     }
 
     private fun visitCallExpression(call: CallExpression): Type {
+        var calleeType = visitExpression(call.callee)
         val functionSymbol = resolveCalledFunctionSymbol(call.callee)
         if (functionSymbol != null) {
             resolvedSymbols[call.callee] = functionSymbol
         }
-        var calleeType = visitExpression(call.callee)
 
         if (calleeType is Type.Struct) {
             return visitStructConstruction(call, calleeType)
@@ -833,13 +900,36 @@ class TypeChecker(
         val argTypes = call.arguments.map { visitExpression(it) }
         val isArgMutable = call.arguments.map { isExpressionMutable(it) }
 
-        if (isValidArgumentCount(calleeType, argTypes.size)) {
-            calleeType = inferFunctionTypeFromFirstCall(functionSymbol, calleeType, argTypes)
+        val isExtension = functionSymbol?.isExtension == true
+        val receiver = (call.callee as? MemberAccessExpression)?.target
+
+        val receiverType = receiver?.let { expressionTypes[it] }
+
+        val finalArgTypes = if (isExtension && receiverType != null) {
+             listOf(receiverType) + argTypes
+        } else argTypes
+
+        val finalIsArgMutable = if (isExtension && receiver != null) {
+             listOf(isExpressionMutable(receiver)) + isArgMutable
+        } else isArgMutable
+
+        if (isValidArgumentCount(calleeType, finalArgTypes.size)) {
+            calleeType = inferFunctionTypeFromFirstCall(functionSymbol, calleeType, finalArgTypes)
         }
 
         // Mark arguments as mutated if the callee mutates them
+        if (isExtension && receiver != null) {
+            if (calleeType.isParameterMutated.getOrElse(0) { false }) {
+                if (!isExpressionMutable(receiver)) {
+                    reportError(receiver, "cannot call mutable extension on immutable value", "declare it with 'var'")
+                }
+                markAsMutated(receiver)
+            }
+        }
+        
         call.arguments.forEachIndexed { i, arg ->
-            if (calleeType.isParameterMutated.getOrElse(i) { false }) {
+            val mutationIndex = if (isExtension) i + 1 else i
+            if (calleeType.isParameterMutated.getOrElse(mutationIndex) { false }) {
                 markAsMutated(arg)
             }
         }
@@ -847,8 +937,9 @@ class TypeChecker(
         typeCompatibilityChecker.checkFunctionCallArguments(
             call,
             calleeType,
-            argTypes,
-            isArgMutable
+            finalArgTypes,
+            finalIsArgMutable,
+            isExtension
         )
 
         return calleeType.returnType
@@ -887,6 +978,7 @@ class TypeChecker(
     private fun resolveCalledFunctionSymbol(callee: Expression): Symbol? {
         return when (callee) {
             is IdentifierExpression -> currentScope.resolve(callee.name)
+            is MemberAccessExpression -> resolvedSymbols[callee]
             else -> null
         }
     }
@@ -1058,13 +1150,82 @@ class TypeChecker(
                 )
                 return Type.Error
             }
-        } else {
-            reportError(
-                memberAccess.target,
-                "member access only allowed on modules. found type: $targetType",
-                "ensure the left side is an imported module"
-            )
-            return Type.Error
+        }
+
+        val extension = findExtension(targetType, memberName)
+        if (extension != null) {
+            resolvedSymbols[memberAccess] = extension
+            expressionTypes[memberAccess] = extension.type
+            return extension.type
+        }
+
+        reportError(
+            memberAccess.member,
+            "type '$targetType' has no member '$memberName'",
+            "check for typos or ensure the extension is imported"
+        )
+        return Type.Error
+    }
+
+    private fun findExtension(receiverType: Type, name: String): Symbol? {
+        ensurePrimitiveExtensionsLoaded(receiverType)
+
+        // Prioritize exact match
+        extensionRegistry[receiverType]?.find { it.name == name }?.let {
+            it.isUsed = true
+            return it
+        }
+
+        // Special case for lists/array_lists
+        if (receiverType is Type.List || receiverType is Type.ArrayList) {
+            val elementType = (receiverType as? Type.List)?.elementType ?: (receiverType as Type.ArrayList).elementType
+            
+            extensionRegistry[Type.List(elementType)]?.find { it.name == name }?.let { it.isUsed = true; return it }
+            extensionRegistry[Type.List(Type.Any)]?.find { it.name == name }?.let { it.isUsed = true; return it }
+            extensionRegistry[Type.ArrayList(elementType)]?.find { it.name == name }?.let { it.isUsed = true; return it }
+            extensionRegistry[Type.ArrayList(Type.Any)]?.find { it.name == name }?.let { it.isUsed = true; return it }
+        }
+
+        // Find compatible receiver
+        for ((type, symbols) in extensionRegistry) {
+            if (typeCompatibilityChecker.isCompatible(type, receiverType)) {
+                symbols.find { it.name == name }?.let { it.isUsed = true; return it }
+            }
+        }
+
+        return null
+    }
+
+    private fun ensurePrimitiveExtensionsLoaded(type: Type) {
+        val canonicalType = when (type) {
+            is Type.String -> Type.String
+            is Type.Number -> Type.Number
+            is Type.List, is Type.ArrayList -> Type.List(Type.Any)
+            is Type.Char -> Type.Char
+            is Type.Boolean -> Type.Boolean
+            else -> null
+        } ?: return
+
+        if (canonicalType in loadedPrimitiveExtensions) return
+        loadedPrimitiveExtensions.add(canonicalType)
+
+        val modulePath = when (canonicalType) {
+            is Type.String -> "core:str"
+            is Type.List -> "core:list"
+            is Type.Number -> "core:math"
+            is Type.Char -> "core:char"
+            else -> null
+        } ?: return
+
+        val importStmt = ImportStatement(modulePath, null, "*")
+        val wasQuiet = isQuietMode
+        isQuietMode = true
+        try {
+            visitImportStatement(importStmt)
+        } catch (_: Exception) {
+            // Ignore errors for automatic loading
+        } finally {
+            isQuietMode = wasQuiet
         }
     }
 
@@ -1332,7 +1493,15 @@ class TypeChecker(
         }
     }
 
-    private fun visitFunctionDeclaration(function: FunctionDeclaration) {
+    private fun visitExtensionDeclaration(extension: ExtensionDeclaration) {
+        val receiverType = typeResolver.resolveType(extension.targetType, extension, currentScope)
+        if (receiverType == Type.Error) return
+        extension.functions.forEach { function ->
+            visitFunctionDeclaration(function, extensionReceiverType = receiverType)
+        }
+    }
+
+    private fun visitFunctionDeclaration(function: FunctionDeclaration, extensionReceiverType: Type? = null) {
         if (function.isIntrinsic) {
             if (!isStandardLibraryFile(currentFilePath)) {
                 reportError(
@@ -1394,6 +1563,19 @@ class TypeChecker(
         var inferredReturnType: Type? = null
         if (isImplicitReturn) {
             val inferenceScope = currentScope.enterScope()
+            if (extensionReceiverType != null) {
+                inferenceScope.define(
+                    Symbol(
+                        "self",
+                        extensionReceiverType,
+                        isMutable = true,
+                        isParameter = true,
+                        isInitialized = true,
+                        line = function.name.line,
+                        column = function.name.column
+                    )
+                )
+            }
             function.parameters.forEachIndexed { index, param ->
                 inferenceScope.define(
                     Symbol(
@@ -1427,7 +1609,28 @@ class TypeChecker(
         val previousPropagated = currentFunctionPropagatedUnsafe
         currentFunctionPropagatedUnsafe = false
 
-        var functionType = Type.Function(paramTypes, hasDefaultValues, declaredReturnType)
+        val finalParamTypes = if (extensionReceiverType != null) {
+            listOf(extensionReceiverType) + paramTypes
+        } else paramTypes
+
+        val finalHasDefaultValues = if (extensionReceiverType != null) {
+            listOf(false) + hasDefaultValues
+        } else hasDefaultValues
+
+        val existingSymbol = if (extensionReceiverType != null) {
+            resolvedSymbols[function.name]
+        } else {
+            currentScope.resolveLocal(function.name.name)
+        }
+
+        val oldMutationInfo = (existingSymbol?.type as? Type.Function)?.isParameterMutated
+
+        var functionType = Type.Function(
+            finalParamTypes,
+            finalHasDefaultValues,
+            declaredReturnType,
+            isParameterMutated = oldMutationInfo ?: finalParamTypes.map { false }
+        )
 
         if (function.isIntrinsic) {
             val qualifiedName =
@@ -1439,10 +1642,9 @@ class TypeChecker(
                 )
             }
         }
-
-        val existingSymbol = currentScope.resolveLocal(function.name.name)
+        
         val functionSymbol: Symbol
-        if (existingSymbol != null && existingSymbol.line == function.name.line && existingSymbol.column == function.name.column) {
+        if (existingSymbol != null && (extensionReceiverType != null || (existingSymbol.line == function.name.line && existingSymbol.column == function.name.column))) {
             existingSymbol.type = functionType
             existingSymbol.inferableParameterIndices.clear()
             existingSymbol.inferableParameterIndices.addAll(inferableParameterIndices)
@@ -1463,6 +1665,23 @@ class TypeChecker(
 
         val paramSymbols = mutableListOf<Symbol>()
         currentScope = currentScope.enterScope()
+
+        if (extensionReceiverType != null) {
+            val selfSymbol = Symbol(
+                "self",
+                extensionReceiverType,
+                isMutable = true,
+                isParameter = true,
+                isInitialized = true,
+                line = function.name.line,
+                column = function.name.column
+            )
+            paramSymbols.add(selfSymbol)
+            if (!currentScope.define(selfSymbol)) {
+                reportError(function.name, "symbol 'self' is already defined")
+            }
+        }
+
         function.parameters.forEachIndexed { index, param ->
             val paramType = paramTypes[index]
             val symbol = Symbol(
@@ -1574,28 +1793,60 @@ class TypeChecker(
                 errors.addAll(importedErrors)
             }
 
-            val symbolsToImport = importedTypeChecker.currentScope.getTopLevelSymbols()
-            val moduleType = Type.Module(symbolsToImport.associateBy { it.name })
+            val importedMember = importStmt.importedMember
+            if (importedMember == null) {
+                val symbolsToImport = importedTypeChecker.currentScope.getTopLevelSymbols()
+                val moduleType = Type.Module(symbolsToImport.associateBy { it.name })
 
-            if (currentScope.resolve(moduleIdentifierName) != null) {
-                reportError(
-                    importStmt,
-                    "conflicting import: identifier '$moduleIdentifierName' already exists",
-                    "use a different alias"
-                )
-            } else {
-                currentScope.define(
-                    Symbol(
-                        moduleIdentifierName,
-                        moduleType,
-                        line = importStmt.line,
-                        column = importStmt.column
+                if (currentScope.resolve(moduleIdentifierName) != null) {
+                    reportError(
+                        importStmt,
+                        "conflicting import: identifier '$moduleIdentifierName' already exists",
+                        "use a different alias"
                     )
-                )
+                } else {
+                    currentScope.define(
+                        Symbol(
+                            moduleIdentifierName,
+                            moduleType,
+                            line = importStmt.line,
+                            column = importStmt.column
+                        )
+                    )
+                    importedModulePrograms[importStmt.path] = importedProgram
+                    importedModuleTypeCheckers[importStmt.path] = importedTypeChecker
+                }
+            } else {
+                if (importedMember == "*") {
+                    importedTypeChecker.extensionRegistry.forEach { (type, symbols) ->
+                        extensionRegistry.getOrPut(type) { mutableListOf() }.addAll(symbols)
+                    }
+                } else {
+                    var found = false
+                    importedTypeChecker.extensionRegistry.forEach { (type, symbols) ->
+                        val matches = symbols.filter { it.name == importedMember }
+                        if (matches.isNotEmpty()) {
+                            extensionRegistry.getOrPut(type) { mutableListOf() }.addAll(matches)
+                            found = true
+                        }
+                    }
+
+                    val sym = importedTypeChecker.currentScope.resolveLocal(importedMember)
+                    if (sym != null) {
+                        currentScope.define(sym)
+                        found = true
+                    }
+
+                    if (!found) {
+                        reportError(
+                            importStmt,
+                            "member '$importedMember' not found in module '${importStmt.path}'"
+                        )
+                    }
+                }
                 importedModulePrograms[importStmt.path] = importedProgram
                 importedModuleTypeCheckers[importStmt.path] = importedTypeChecker
             }
-
         } catch (e: Exception) {
             reportError(importStmt, "error processing import: ${e.message}")
         }

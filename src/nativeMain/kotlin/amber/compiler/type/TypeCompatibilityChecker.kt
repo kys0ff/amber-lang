@@ -2,6 +2,7 @@ package amber.compiler.type
 
 import amber.compiler.ast.AstNode
 import amber.compiler.ast.CallExpression
+import amber.compiler.ast.MemberAccessExpression
 
 class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, message: String, suggestion: String?) -> Unit) {
 
@@ -19,14 +20,16 @@ class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, messag
         }
         if (target is Type.List && value is Type.List) {
             if (target.elementType == Type.Any || value.elementType == Type.Any) return true
-            return target.elementType == value.elementType
+            return isCompatible(target.elementType, value.elementType)
         }
         
         // Dynamic Mutability: List and ArrayList are interchangeable
         if (target is Type.List && value is Type.ArrayList) {
+            if (target.elementType == Type.Any) return true
             return isCompatible(target.elementType, value.elementType)
         }
         if (target is Type.ArrayList && value is Type.List) {
+            if (target.elementType == Type.Any) return true
             return isCompatible(target.elementType, value.elementType)
         }
 
@@ -204,12 +207,13 @@ class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, messag
         call: CallExpression,
         calleeType: Type.Function,
         argTypes: List<Type>,
-        isArgMutable: List<Boolean>
+        isArgMutable: List<Boolean>,
+        isExtension: Boolean = false
     ): Boolean {
         val minArgs = calleeType.parameterTypes.zip(calleeType.hasDefaultValues).count { (_, hasDef) -> !hasDef }
         val maxArgs = calleeType.parameterTypes.size
 
-        if (argTypes.size !in minArgs..maxArgs) {
+        if (argTypes.size < minArgs || argTypes.size > maxArgs) {
             val expected = if (minArgs == maxArgs) "$minArgs" else "$minArgs-$maxArgs"
             errorReporter(
                 call,
@@ -221,12 +225,23 @@ class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, messag
 
         var allCompatible = true
         argTypes.forEachIndexed { i, argType ->
+            if (i >= calleeType.parameterTypes.size) {
+                // This should be handled by the count check above, but being safe
+                return@forEachIndexed
+            }
             val expected = calleeType.parameterTypes[i]
             val isMutated = calleeType.isParameterMutated.getOrElse(i) { false }
 
+            val errorNode = if (isExtension) {
+                if (i == 0) (call.callee as? MemberAccessExpression)?.target ?: call
+                else call.arguments.getOrNull(i - 1) ?: call
+            } else {
+                call.arguments.getOrNull(i) ?: call
+            }
+
             if (isMutated && !isArgMutable.getOrElse(i) { false }) {
                 errorReporter(
-                    call.arguments[i],
+                    errorNode,
                     "argument ${i + 1} must be a mutable 'var' because the function modifies it",
                     "declare the variable with 'var' instead of 'val'"
                 )
@@ -235,7 +250,7 @@ class TypeCompatibilityChecker(private val errorReporter: (node: AstNode, messag
 
             if (argType != Type.Error && argType != Type.Nothing && !isCompatible(expected, argType)) {
                 errorReporter(
-                    call.arguments[i],
+                    errorNode,
                     "argument ${i + 1} type mismatch: expected $expected, got $argType",
                     "pass a value that matches the parameter type"
                 )

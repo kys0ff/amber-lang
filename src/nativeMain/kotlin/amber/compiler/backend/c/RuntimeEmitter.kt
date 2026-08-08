@@ -248,10 +248,13 @@ class RuntimeEmitter(
             }
         """.trimIndent())
         writer.writeLine()
-        
+    }
+
+    fun emitIntrinsicImplementations(usedIntrinsicNames: Set<String>) {
         StandardLibrary.intrinsics.values.forEach { intrinsic ->
-            intrinsic.cImplementation?.let {
-                writer.writeLine(it)
+            val qualifiedName = if (intrinsic.module != null) "${intrinsic.module}.${intrinsic.name}" else intrinsic.name
+            if (intrinsic.cImplementation != null && (intrinsic.module == null || usedIntrinsicNames.contains(qualifiedName))) {
+                writer.writeLine(intrinsic.cImplementation)
                 writer.writeLine()
             }
         }

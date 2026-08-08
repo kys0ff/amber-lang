@@ -1,4 +1,28 @@
 # List utilities module
+
+extend any[] {
+    ##
+    # Returns the num of elements in a list.
+    intrinsic func len(): num
+
+    ##
+    # Adds an element to the end of a list.
+    intrinsic func push(value: any)
+
+    ##
+    # Removes and returns the last element from a list.
+    intrinsic func pop(): any
+
+    ##
+    # Returns the element at the specified index.
+    # Panics if the index is out of bounds.
+    intrinsic func get(index: num): any
+
+    ##
+    # Returns the element at the specified index or an error if the index is out of bounds.
+    intrinsic func get_or_err(index: num): any!
+}
+
 ##
 # Returns the num of elements in a list.
 intrinsic func len(l: any[]): num

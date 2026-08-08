@@ -161,6 +161,16 @@ object StandardLibrary {
                     cImpl = "double __amber_rt_math_max(double a, double b) { return a > b ? a : b; }")
                 func("min", listOf(Type.Number, Type.Number), Type.Number, "math_min",
                     cImpl = "double __amber_rt_math_min(double a, double b) { return a < b ? a : b; }")
+                func("clamp", listOf(Type.Number, Type.Number, Type.Number), Type.Number, "math_clamp",
+                    cImpl = "double __amber_rt_math_clamp(double n, double min, double max) { if (n < min) return min; if (n > max) return max; return n; }")
+            }
+
+            // Char Module
+            module("std.char") {
+                func("is_digit", listOf(Type.Char), Type.Boolean, "char_is_digit",
+                    cImpl = "int __amber_rt_char_is_digit(char c) { return (c >= '0' && c <= '9') ? 1 : 0; }")
+                func("is_letter", listOf(Type.Char), Type.Boolean, "char_is_letter",
+                    cImpl = "int __amber_rt_char_is_letter(char c) { return ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) ? 1 : 0; }")
             }
 
             // Runtime Module

@@ -3,33 +3,47 @@
 # The mathematical constant pi.
 val pi = 3.141592653589793
 
-##
-# Returns the absolute value of a num.
-intrinsic func abs(n: num): num
+extend num {
+    ##
+    # Returns the absolute value of a num.
+    intrinsic func abs(): num
 
-##
-# Returns the square root of a num.
-intrinsic func sqrt(n: num): num
+    ##
+    # Returns the square root of a num.
+    intrinsic func sqrt(): num
 
-##
-# Returns the value of a base raised to a power.
-intrinsic func pow(base: num, exp: num): num
+    ##
+    # Returns the value of a base raised to a power.
+    intrinsic func pow(exp: num): num
 
-##
-# Returns the sine of a num (in radians).
-intrinsic func sin(n: num): num
+    ##
+    # Returns the sine of a num (in radians).
+    intrinsic func sin(): num
 
-##
-# Returns the cosine of a num (in radians).
-intrinsic func cos(n: num): num
+    ##
+    # Returns the cosine of a num (in radians).
+    intrinsic func cos(): num
 
-##
-# Returns the largest integer less than or equal to a num.
-intrinsic func floor(n: num): num
+    ##
+    # Returns the largest integer less than or equal to a num.
+    intrinsic func floor(): num
 
-##
-# Returns the smallest integer greater than or equal to a num.
-intrinsic func ceil(n: num): num
+    ##
+    # Returns the smallest integer greater than or equal to a num.
+    intrinsic func ceil(): num
+
+    ##
+    # Returns the greater of two nums.
+    intrinsic func max(other: num): num
+
+    ##
+    # Returns the smaller of two nums.
+    intrinsic func min(other: num): num
+
+    ##
+    # Clamps a num between a minimum and maximum value.
+    intrinsic func clamp(min: num, max: num): num
+}
 
 ##
 # Returns the greater of two nums.

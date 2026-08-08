@@ -1,7 +1,31 @@
 # String utilities module
-##
-# Converts any value to its string representation.
-intrinsic func to_string(value: any): string
+
+extend string {
+    ##
+    # Returns the length of a string.
+    intrinsic func len(): num
+
+    ##
+    # Returns the character at the specified index.
+    # Panics if the index is out of bounds.
+    intrinsic func get(index: num): char
+
+    ##
+    # Returns the character at the specified index or an error if the index is out of bounds.
+    intrinsic func get_or_err(index: num): char!
+
+    ##
+    # Returns true if the string contains the specified substring.
+    intrinsic func contains(sub: string): bool
+
+    ##
+    # Returns true if the string starts with the specified substring.
+    intrinsic func starts_with(sub: string): bool
+
+    ##
+    # Returns true if the string ends with the specified substring.
+    intrinsic func ends_with(sub: string): bool
+}
 
 ##
 # Returns the length of a string.
@@ -17,10 +41,6 @@ intrinsic func get(s: string, index: num): char
 intrinsic func get_or_err(s: string, index: num): char!
 
 ##
-# Converts a num to its string representation.
-intrinsic func from_num(n: num): string
-
-##
 # Returns true if the string contains the specified substring.
 intrinsic func contains(s: string, sub: string): bool
 
@@ -31,3 +51,11 @@ intrinsic func starts_with(s: string, sub: string): bool
 ##
 # Returns true if the string ends with the specified substring.
 intrinsic func ends_with(s: string, sub: string): bool
+
+##
+# Converts any value to its string representation.
+intrinsic func to_string(value: any): string
+
+##
+# Converts a num to its string representation.
+intrinsic func from_num(n: num): string

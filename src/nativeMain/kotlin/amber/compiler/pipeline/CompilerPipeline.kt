@@ -104,6 +104,7 @@ class CompilerPipeline(val config: CompilerConfig) {
                 allExpressionTypes,
                 allResolvedSymbols,
                 allResolvedIsTypes,
+                typeChecker.importedModulePrograms,
                 runtimeProvider,
                 gc = gc,
                 config = config

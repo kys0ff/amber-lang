@@ -1,0 +1,11 @@
+# Character utilities module
+
+extend char {
+    ##
+    # Returns true if the character is a digit.
+    intrinsic func is_digit(): bool
+
+    ##
+    # Returns true if the character is a letter.
+    intrinsic func is_letter(): bool
+}

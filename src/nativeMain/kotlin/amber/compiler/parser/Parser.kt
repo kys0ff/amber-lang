@@ -12,6 +12,7 @@ import amber.compiler.ast.EnumDeclaration
 import amber.compiler.ast.ErrorNode
 import amber.compiler.ast.Expression
 import amber.compiler.ast.ExpressionStatement
+import amber.compiler.ast.ExtensionDeclaration
 import amber.compiler.ast.ForStatement
 import amber.compiler.ast.FunctionDeclaration
 import amber.compiler.ast.IdentifierExpression
@@ -179,6 +180,7 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
 
                     "return" -> parseReturnStatement()
                     "use" -> parseImportStatement()
+                    "extend" -> parseExtensionDeclaration()
                     else -> parseExpressionStatement()
                 }
             }
@@ -211,13 +213,56 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
         }
         consume()
 
+        val fullPath = pathToken.value
+        var path = fullPath
+        var importedMember: String? = null
+
+        if (fullPath.contains(".")) {
+            val lastDot = fullPath.lastIndexOf(".")
+            path = fullPath.substring(0, lastDot)
+            importedMember = fullPath.substring(lastDot + 1)
+        }
+
         var asName: IdentifierExpression? = null
         if (peek().value() == "as") {
             consume()
             val aliasToken = expectIdentifier()
             asName = IdentifierExpression(aliasToken.value, aliasToken.line, aliasToken.column)
         }
-        return ImportStatement(pathToken.value, asName, useKeyword.line, useKeyword.column)
+        return ImportStatement(path, asName, importedMember, useKeyword.line, useKeyword.column)
+    }
+
+    private fun parseExtensionDeclaration(): ExtensionDeclaration {
+        val extendKeyword = consume()
+        val targetType = parseType()
+        expectToken("{")
+        skipNewlines()
+        val functions = mutableListOf<FunctionDeclaration>()
+        while (peek().value() != "}") {
+            if (peek() is Token.EOF) {
+                reportError("unclosed extension block, expected '}'")
+                return ExtensionDeclaration(targetType, functions, extendKeyword.line, extendKeyword.column)
+            }
+            try {
+                var isIntrinsic = false
+                if (peek().value() == "intrinsic") {
+                    consume()
+                    isIntrinsic = true
+                }
+                
+                if (peek().value() == "func") {
+                    functions.add(parseFunctionDeclaration(isIntrinsic))
+                } else {
+                    reportError("only functions are allowed in extension blocks")
+                    consume()
+                }
+            } catch (_: ParserRecoveryException) {
+                synchronize()
+            }
+            skipNewlines()
+        }
+        expectToken("}")
+        return ExtensionDeclaration(targetType, functions, extendKeyword.line, extendKeyword.column)
     }
 
     private fun parseBlockStatement(): BlockStatement {

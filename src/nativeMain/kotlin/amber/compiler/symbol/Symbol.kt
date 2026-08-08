@@ -16,6 +16,7 @@ class Symbol(
     val inferableParameterIndices: MutableSet<Int> = mutableSetOf(),
     var isUsed: Boolean = false,
     val isIntrinsic: Boolean = false,
+    val isExtension: Boolean = false,
     val line: Int = -1,
     val column: Int = -1,
     val namespace: String? = null

@@ -3,6 +3,7 @@ package amber.compiler.backend.c
 import amber.compiler.CompilerConfig
 import amber.compiler.ast.EnumDeclaration
 import amber.compiler.ast.Expression
+import amber.compiler.ast.ExtensionDeclaration
 import amber.compiler.ast.FunctionDeclaration
 import amber.compiler.ast.Program
 import amber.compiler.ast.StructDeclaration
@@ -18,6 +19,7 @@ class CBackend(
     private val expressionTypes: Map<Expression, Type>,
     private val resolvedSymbols: Map<Expression, Symbol>,
     private val resolvedIsTypes: Map<amber.compiler.ast.IsExpression, Type> = emptyMap(),
+    private val importedModulePrograms: Map<String, Program> = emptyMap(),
     private val runtimeProvider: RuntimeProvider,
     private val gc: GarbageCollector = BoehmGC,
     private val config: CompilerConfig? = null
@@ -51,22 +53,35 @@ class CBackend(
         val statementEmitter = StatementEmitter(writer, expressionEmitter, symbolEmitter, typeMapper, usedExpressionTypes, usedResolvedSymbols)
         expressionEmitter.statementEmitter = statementEmitter
 
+        val allPrograms = listOf(program) + importedModulePrograms.values
+
+        val usedSymbols = usedResolvedSymbols.values.toSet()
+        val usedIntrinsicNames = usedSymbols.filter { it.isIntrinsic }.map { it.qualifiedName }.toMutableSet()
+        
+        // Always include basic runtime helpers
+        usedIntrinsicNames.add("std.runtime.panic")
+
         runtimeEmitter.emitHeaders()
         runtimeEmitter.emitTypedefs()
         runtimeEmitter.emitIntrinsics()
+        runtimeEmitter.emitIntrinsicImplementations(usedIntrinsicNames)
         runtimeEmitter.emitDefinitions()
 
-        val enums = program.statements.filterIsInstance<EnumDeclaration>()
-        val structs = program.statements.filterIsInstance<StructDeclaration>()
-        val functions = program.statements.filterIsInstance<FunctionDeclaration>().filter { !it.isIntrinsic }
-        val variables = program.statements.filterIsInstance<VariableDeclaration>().filter { !it.isIntrinsic }
+        val enums = allPrograms.flatMap { it.statements.filterIsInstance<EnumDeclaration>() }
+        val structs = allPrograms.flatMap { it.statements.filterIsInstance<StructDeclaration>() }
+        val extensions = allPrograms.flatMap { it.statements.filterIsInstance<ExtensionDeclaration>() }
+        val functions = allPrograms.flatMap { it.statements.filterIsInstance<FunctionDeclaration>() }.filter { !it.isIntrinsic }
+        val variables = allPrograms.flatMap { it.statements.filterIsInstance<VariableDeclaration>() }.filter { !it.isIntrinsic }
+
+        val allFunctions = extensions.flatMap { it.functions }.filter { !it.isIntrinsic && (usedResolvedSymbols[it.name]?.isUsed == true) } +
+                functions.filter { usedResolvedSymbols[it.name]?.isUsed == true || it in program.statements }
 
         enums.forEach { statementEmitter.emit(it) }
         structs.forEach { statementEmitter.emit(it) }
         variables.forEach { statementEmitter.emit(it, declarationOnly = true, isTopLevel = true) }
-        functions.forEach { statementEmitter.emit(it, declarationOnly = true) }
+        allFunctions.forEach { statementEmitter.emit(it, declarationOnly = true) }
         writer.writeLine("")
-        functions.forEach { statementEmitter.emit(it) }
+        allFunctions.forEach { statementEmitter.emit(it) }
 
         writer.writeLine("int main(int argc, char** argv) {")
         writer.indent()

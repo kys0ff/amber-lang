@@ -1,6 +1,40 @@
 package amber.compiler.formatter
 
-import amber.compiler.ast.*
+import amber.compiler.ast.ArrayLiteralExpression
+import amber.compiler.ast.AssignmentExpression
+import amber.compiler.ast.AstNode
+import amber.compiler.ast.BinaryExpression
+import amber.compiler.ast.BlockStatement
+import amber.compiler.ast.BreakStatement
+import amber.compiler.ast.CallExpression
+import amber.compiler.ast.CatchExpression
+import amber.compiler.ast.ContinueStatement
+import amber.compiler.ast.EnumDeclaration
+import amber.compiler.ast.ErrorNode
+import amber.compiler.ast.Expression
+import amber.compiler.ast.ExpressionStatement
+import amber.compiler.ast.ExtensionDeclaration
+import amber.compiler.ast.ForStatement
+import amber.compiler.ast.FunctionDeclaration
+import amber.compiler.ast.IdentifierExpression
+import amber.compiler.ast.IfStatement
+import amber.compiler.ast.ImportStatement
+import amber.compiler.ast.IndexAccessExpression
+import amber.compiler.ast.IsExpression
+import amber.compiler.ast.LiteralExpression
+import amber.compiler.ast.MemberAccessExpression
+import amber.compiler.ast.NamedArgumentExpression
+import amber.compiler.ast.PanicExpression
+import amber.compiler.ast.Parameter
+import amber.compiler.ast.Program
+import amber.compiler.ast.ReturnStatement
+import amber.compiler.ast.Statement
+import amber.compiler.ast.StringTemplateExpression
+import amber.compiler.ast.StructDeclaration
+import amber.compiler.ast.StructField
+import amber.compiler.ast.UnaryExpression
+import amber.compiler.ast.VariableDeclaration
+import amber.compiler.ast.WhileStatement
 import amber.compiler.lexer.Lexer
 import amber.compiler.lexer.Token
 import amber.compiler.parser.Parser
@@ -110,7 +144,11 @@ class Formatter(private val options: FormattingOptions = FormattingOptions()) {
             when (node) {
                 is ImportStatement -> {
                     appendIndent()
-                    append("use \"${node.path}\"")
+                    append("use \"${node.path}")
+                    if (node.importedMember != null) {
+                        append(".${node.importedMember}")
+                    }
+                    append("\"")
                     if (node.asName != null) {
                         append(" as ")
                         visit(node.asName)
@@ -247,6 +285,21 @@ class Formatter(private val options: FormattingOptions = FormattingOptions()) {
                         node.statements.forEach { stmt ->
                             visit(stmt)
                             if (!lastWasNewline) appendNewline()
+                        }
+                        indentLevel--
+                        appendIndent()
+                    }
+                    append("}")
+                }
+                is ExtensionDeclaration -> {
+                    appendIndent()
+                    append("extend ${node.targetType} {")
+                    if (node.functions.isNotEmpty()) {
+                        appendNewline()
+                        indentLevel++
+                        node.functions.forEach { func ->
+                            visit(func)
+                            appendNewline()
                         }
                         indentLevel--
                         appendIndent()
