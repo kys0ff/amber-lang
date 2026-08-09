@@ -13,7 +13,7 @@ class CRuntimeProvider : RuntimeProvider {
         val intrinsic = StandardLibrary.getIntrinsic(symbol.qualifiedName)
         if (intrinsic != null) return intrinsic.cName
         
-        if (symbol.namespace == null) {
+        if (symbol.namespace == null && symbol.isIntrinsic) {
             val match = StandardLibrary.intrinsics.values.find { it.name == symbol.name }
             if (match != null) return match.cName
         }

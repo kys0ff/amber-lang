@@ -48,9 +48,20 @@ class CBackend(
 
         val symbolEmitter = SymbolEmitter()
         val typeMapper = CTypeMapper(symbolEmitter)
+        
+        val context = CGenerationContext(
+            writer,
+            usedExpressionTypes,
+            usedResolvedSymbols,
+            resolvedIsTypes,
+            symbolEmitter,
+            typeMapper,
+            runtimeProvider
+        )
+
         val runtimeEmitter = RuntimeEmitter(writer, gc)
-        val expressionEmitter = ExpressionEmitter(writer, usedExpressionTypes, usedResolvedSymbols, resolvedIsTypes, symbolEmitter, typeMapper, runtimeProvider)
-        val statementEmitter = StatementEmitter(writer, expressionEmitter, symbolEmitter, typeMapper, usedExpressionTypes, usedResolvedSymbols)
+        val expressionEmitter = ExpressionEmitter(context)
+        val statementEmitter = StatementEmitter(context, expressionEmitter)
         expressionEmitter.statementEmitter = statementEmitter
 
         val allPrograms = listOf(program) + importedModulePrograms.values
@@ -60,6 +71,9 @@ class CBackend(
         
         // Always include basic runtime helpers
         usedIntrinsicNames.add("std.runtime.panic")
+        usedIntrinsicNames.add("std.str.from_num")
+        usedIntrinsicNames.add("std.str.str_concat")
+        usedIntrinsicNames.add("to_string")
 
         runtimeEmitter.emitHeaders()
         runtimeEmitter.emitTypedefs()

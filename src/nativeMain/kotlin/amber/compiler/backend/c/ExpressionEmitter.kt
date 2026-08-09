@@ -19,410 +19,373 @@ import amber.compiler.ast.UnaryExpression
 import amber.compiler.ast.VariableDeclaration
 import amber.compiler.symbol.Symbol
 import amber.compiler.type.Type
-import amber.runtime.RuntimeProvider
 
-class ExpressionEmitter(
-    private val writer: CodeWriter,
-    private val expressionTypes: Map<Expression, Type>,
-    private val resolvedSymbols: Map<Expression, Symbol>,
-    private val resolvedIsTypes: Map<IsExpression, Type> = emptyMap(),
-    private val symbolEmitter: SymbolEmitter,
-    private val typeMapper: CTypeMapper,
-    private val runtimeProvider: RuntimeProvider
-) {
+class ExpressionEmitter(private val context: CGenerationContext) {
+    
     var statementEmitter: StatementEmitter? = null
 
     fun emit(expression: Expression, expectedType: Type? = null) {
-        val actualType = expressionTypes[expression]
+        val actualType = context.expressionTypes[expression]
         
-        // Boxing: primitive -> any
-        if (expectedType == Type.Any && actualType != null && actualType != Type.Any && actualType != Type.Error && actualType != Type.Nothing) {
-            if (actualType == Type.Number) {
-                writer.write("__amber_rt_box_double(")
-                emitRaw(expression)
-                writer.write(")")
-                return
+        val boxFunc = if (expectedType == Type.Any && actualType != Type.Any && actualType != null) {
+            when (actualType) {
+                Type.Number -> "__amber_rt_box_double"
+                Type.Boolean -> "__amber_rt_box_bool"
+                Type.String -> "__amber_rt_box_string"
+                Type.Char -> "__amber_rt_box_char"
+                is Type.Enum -> "__amber_rt_box_enum"
+                is Type.Struct -> "__amber_rt_box_${context.symbolEmitter.mangleStruct(actualType.name, actualType.namespace)}"
+                else -> ""
             }
-            if (actualType == Type.Boolean) {
-                writer.write("__amber_rt_box_bool(")
-                emitRaw(expression)
-                writer.write(")")
-                return
-            }
-            if (actualType == Type.String) {
-                writer.write("__amber_rt_box_string(")
-                emitRaw(expression)
-                writer.write(")")
-                return
-            }
-            if (actualType == Type.Char) {
-                writer.write("__amber_rt_box_char(")
-                emitRaw(expression)
-                writer.write(")")
-                return
-            }
-            if (actualType is Type.Enum) {
-                writer.write("__amber_rt_box_enum(")
-                emitRaw(expression)
-                writer.write(", &${symbolEmitter.mangle("type_${actualType.name}", actualType.moduleNamespace)})")
-                return
-            }
-            if (actualType is Type.Struct) {
-                val mangledName = symbolEmitter.mangleStruct(actualType.name, actualType.namespace)
-                writer.write("__amber_rt_box_$mangledName(")
-                emitRaw(expression)
-                writer.write(")")
-                return
-            }
+        } else ""
+
+        if (boxFunc.isNotEmpty()) {
+            context.writer.write(boxFunc)
+            context.writer.write("(")
         }
-        
-        // Unboxing: any -> primitive
-        if (actualType == Type.Any && expectedType != null && expectedType != Type.Any && expectedType != Type.Error && expectedType != Type.Nothing) {
-            if (expectedType == Type.Number) {
-                writer.write("__amber_rt_unbox_double(")
-                emitRaw(expression)
-                writer.write(")")
-                return
-            }
-            if (expectedType == Type.Boolean) {
-                writer.write("__amber_rt_unbox_bool(")
-                emitRaw(expression)
-                writer.write(")")
-                return
-            }
-            if (expectedType == Type.String) {
-                writer.write("__amber_rt_unbox_string(")
-                emitRaw(expression)
-                writer.write(")")
-                return
-            }
-            if (expectedType == Type.Char) {
-                writer.write("__amber_rt_unbox_char(")
-                emitRaw(expression)
-                writer.write(")")
-                return
-            }
-            if (expectedType is Type.Enum) {
-                writer.write("__amber_rt_unbox_enum(")
-                emitRaw(expression)
-                writer.write(")")
-                return
-            }
-            if (expectedType is Type.Struct) {
-                val mangledName = symbolEmitter.mangleStruct(expectedType.name, expectedType.namespace)
-                writer.write("__amber_rt_unbox_$mangledName(")
-                emitRaw(expression)
-                writer.write(")")
-                return
-            }
-        }
-        
+
         emitRaw(expression)
+
+        if (boxFunc.isNotEmpty()) {
+            if (actualType is Type.Enum) {
+                context.writer.write(", &${context.symbolEmitter.mangle("type_${actualType.name}", actualType.moduleNamespace)}")
+            }
+            context.writer.write(")")
+        }
     }
 
     private fun emitRaw(expression: Expression) {
         when (expression) {
-            is LiteralExpression -> {
-                when (val value = expression.value) {
-                    is String -> writer.write("\"${value.replace("\"", "\\\"")}\"")
-                    is Number -> writer.write(value.toString())
-                    is Boolean -> writer.write(if (value) "1" else "0")
-                    null -> writer.write("NULL")
-                    else -> writer.write(value.toString())
-                }
-            }
-            is IdentifierExpression -> {
-                val symbol = resolvedSymbols[expression]
-                if (symbol != null) {
-                    emitSymbol(symbol)
-                } else {
-                    writer.write(symbolEmitter.mangle(expression.name))
-                }
-            }
-            is BinaryExpression -> {
-                val leftType = expressionTypes[expression.left]
-                val rightType = expressionTypes[expression.right]
-                if (expression.operator == "+" && (leftType == Type.String || rightType == Type.String)) {
-                    writer.write(symbolEmitter.runtimeHelper("str_concat"))
-                    writer.write("(")
-                    emitSegment(expression.left)
-                    writer.write(", ")
-                    emitSegment(expression.right)
-                    writer.write(")")
-                } else if (expression.operator == "+" && (leftType is Type.ArrayList || leftType is Type.List)) {
-                    writer.write("({ ")
-                    writer.write("${typeMapper.map(leftType)} _l = ")
-                    emit(expression.left)
-                    writer.write("; ")
-                    writer.write(symbolEmitter.runtimeHelper("list_push"))
-                    writer.write("(_l, ")
-                    emit(expression.right, Type.Any)
-                    writer.write("); _l; })")
-                } else if ((expression.operator == "==" || expression.operator == "!=") && leftType == Type.String) {
-                    if (expression.operator == "!=") writer.write("!")
-                    writer.write("strcmp(")
-                    emit(expression.left)
-                    writer.write(", ")
-                    emit(expression.right)
-                    writer.write(") == 0")
-                } else {
-                    writer.write("(")
-                    emit(expression.left)
-                    writer.write(" ${expression.operator} ")
-                    emit(expression.right)
-                    writer.write(")")
-                }
-            }
-            is CallExpression -> {
-                val calleeType = expressionTypes[expression.callee]
-                if (calleeType is Type.Struct) {
-                    emitStructConstruction(expression, calleeType)
-                    return
-                }
-
-                val calleeSymbol = resolvedSymbols[expression.callee]
-                val functionType = calleeSymbol?.type as? Type.Function
-                val isExtension = calleeSymbol?.isExtension == true
-                
-                emit(expression.callee)
-                writer.write("(")
-                
-                if (isExtension && functionType != null) {
-                    val receiver = (expression.callee as? MemberAccessExpression)?.target
-                    if (receiver != null) {
-                        emit(receiver, functionType.parameterTypes[0])
-                        if (expression.arguments.isNotEmpty()) writer.write(", ")
-                    }
-                }
-
-                expression.arguments.forEachIndexed { index, arg ->
-                    val mutationIndex = if (isExtension) index + 1 else index
-                    val paramType = functionType?.parameterTypes?.getOrNull(mutationIndex) ?: Type.Any
-                    val isMutated = functionType?.isParameterMutated?.getOrNull(mutationIndex) ?: false
-                    
-                    if (isMutated && isPrimitive(paramType)) {
-                        writer.write("&")
-                    }
-                    
-                    emit(arg, paramType)
-                    
-                    if (index < expression.arguments.size - 1) {
-                        writer.write(", ")
-                    }
-                }
-                writer.write(")")
-            }
-            is UnaryExpression -> {
-                writer.write(expression.operator)
-                emit(expression.operand)
-            }
-            is ArrayLiteralExpression -> {
-                writer.write(symbolEmitter.runtimeHelper("create_list"))
-                writer.write("(")
-                writer.write(expression.elements.size.toString())
-                expression.elements.forEach { arg ->
-                    writer.write(", ")
-                    emit(arg, Type.Any)
-                }
-                writer.write(")")
-            }
-            is AssignmentExpression -> {
-                val target = expression.target
-                if (target is IdentifierExpression) {
-                    val symbol = resolvedSymbols[target]
-                    val name = symbol?.let { symbolEmitter.mangle(it.name, it.namespace) } ?: symbolEmitter.mangle(target.name)
-                    if (symbol != null && symbol.isParameter && symbol.isMutated && isPrimitive(symbol.type)) {
-                        writer.write("(*$name)")
-                    } else {
-                        writer.write(name)
-                    }
-                    writer.write(" = ")
-                    val targetType = expressionTypes[target] ?: Type.Any
-                    emit(expression.value, targetType)
-                } else if (target is IndexAccessExpression) {
-                    val targetType = expressionTypes[target.target]
-                    if (targetType is Type.List || targetType is Type.ArrayList || targetType == Type.Any) {
-                        writer.write(symbolEmitter.runtimeHelper("list_set"))
-                        writer.write("(")
-                        emit(target.target)
-                        writer.write(", ")
-                        emit(target.index)
-                        writer.write(", ")
-                        emit(expression.value, Type.Any)
-                        writer.write(")")
-                    } else {
-                        emitRaw(target)
-                        writer.write(" = ")
-                        val valType = expressionTypes[target] ?: Type.Any
-                        emit(expression.value, valType)
-                    }
-                } else {
-                    emitRaw(target)
-                    writer.write(" = ")
-                    val targetType = expressionTypes[target] ?: Type.Any
-                    emit(expression.value, targetType)
-                }
-            }
-            is MemberAccessExpression -> {
-                val targetType = expressionTypes[expression.target]
-                if (targetType is Type.EnumNamespace) {
-                    val enumType = targetType.enumType
-                    writer.write(symbolEmitter.mangle("${enumType.name}_${expression.member.name}", enumType.moduleNamespace))
-                    return
-                }
-
-                val symbol = resolvedSymbols[expression]
-                if (symbol != null) {
-                    emitSymbol(symbol)
-                } else {
-                    emit(expression.target)
-                    writer.write(".")
-                    writer.write(expression.member.name)
-                }
-            }
-            is StringTemplateExpression -> {
-                emitStringTemplate(expression.segments)
-            }
-            is NamedArgumentExpression -> {
-                emit(expression.value)
-            }
-            is IsExpression -> {
-                val descriptor = when (val targetType = resolvedIsTypes[expression]) {
-                    is Type.Number -> "&__amber_type_double"
-                    is Type.String -> "&__amber_type_string"
-                    is Type.Boolean -> "&__amber_type_bool"
-                    is Type.List, is Type.ArrayList -> "&__amber_type_list"
-                    is Type.Enum -> "&${symbolEmitter.mangle("type_${targetType.name}", targetType.moduleNamespace)}"
-                    is Type.Struct -> "&${symbolEmitter.mangle("type_${targetType.name}", targetType.namespace)}"
-                    else -> "NULL"
-                }
-                writer.write("__amber_rt_is_type(")
-                emit(expression.left, Type.Any)
-                writer.write(", $descriptor)")
-            }
-            is IndexAccessExpression -> {
-                val targetType = expressionTypes[expression.target]
-                if (targetType is Type.List || targetType is Type.ArrayList || targetType == Type.Any) {
-                    val elementType = when (targetType) {
-                        is Type.List -> targetType.elementType
-                        is Type.ArrayList -> targetType.elementType
-                        else -> Type.Any
-                    }
-                    val boxFunc = when (elementType) {
-                        Type.Number -> "__amber_rt_unbox_double"
-                        Type.Boolean -> "__amber_rt_unbox_bool"
-                        Type.String -> "__amber_rt_unbox_string"
-                        Type.Char -> "__amber_rt_unbox_char"
-                        is Type.Enum -> "__amber_rt_unbox_enum"
-                        is Type.Struct -> "__amber_rt_unbox_${symbolEmitter.mangleStruct(elementType.name, elementType.namespace)}"
-                        else -> ""
-                    }
-                    if (boxFunc.isNotEmpty()) {
-                        writer.write("$boxFunc(")
-                    }
-                    writer.write(symbolEmitter.runtimeHelper("list_get"))
-                    writer.write("(")
-                    emit(expression.target)
-                    writer.write(", ")
-                    emit(expression.index)
-                    writer.write(")")
-                    if (boxFunc.isNotEmpty()) {
-                        writer.write(")")
-                    }
-                } else if (targetType == Type.String) {
-                    writer.write(symbolEmitter.runtimeHelper("str_get"))
-                    writer.write("(")
-                    emit(expression.target)
-                    writer.write(", ")
-                    emit(expression.index)
-                    writer.write(")")
-                } else {
-                    emit(expression.target)
-                    writer.write("[")
-                    emit(expression.index)
-                    writer.write("]")
-                }
-            }
-            is PanicExpression -> {
-                if (expression.isFatal) {
-                    writer.write("__amber_rt_panic(")
-                    if (expression.message != null) emit(expression.message) else writer.write("\"panic\"")
-                    writer.write(")")
-                } else {
-                    writer.write("__amber_rt_result_error(")
-                    if (expression.message != null) emit(expression.message) else writer.write("\"error\"")
-                    writer.write(")")
-                }
-            }
-            is CatchExpression -> {
-                val targetType = expressionTypes[expression.target]
-                if (targetType !is Type.Unsafe && targetType != Type.Error) {
-                    emit(expression.target)
-                    return
-                }
-                val innerType = if (targetType is Type.Unsafe) targetType.innerType else Type.Any
-                val cInnerType = typeMapper.map(innerType)
-                
-                val resVar = symbolEmitter.nextTemp()
-                val finalResVar = symbolEmitter.nextTemp()
-
-                writer.write("({ ")
-                writer.write("struct AMBER_RESULT $resVar = ")
-                emit(expression.target)
-                writer.write("; ")
-                writer.write("$cInnerType $finalResVar; ")
-                writer.write("if (__amber_rt_is_error($resVar)) { ")
-                
-                if (expression.errorVarName != "_" && expression.errorVarName.isNotEmpty()) {
-                    writer.write("const char* ${symbolEmitter.mangle(expression.errorVarName)} = $resVar.error_message; ")
-                }
-                
-                expression.body.statements.forEachIndexed { index, stmt ->
-                    val isLast = index == expression.body.statements.size - 1
-                    if (isLast) {
-                        if (stmt is ExpressionStatement) {
-                            val expr = stmt.expression
-                            if (expressionTypes[expr] == Type.Nothing) {
-                                emit(expr)
-                                writer.write("; ")
-                            } else {
-                                writer.write("$finalResVar = ")
-                                emit(expr)
-                                writer.write("; ")
-                            }
-                        } else if (stmt is VariableDeclaration) {
-                            val vSymbol = resolvedSymbols[stmt.name]
-                            val vType = expressionTypes[stmt.initializer] ?: vSymbol?.type ?: Type.Any
-                            val vName = vSymbol?.let { symbolEmitter.mangle(it.name, it.namespace) } ?: symbolEmitter.mangle(stmt.name.name)
-                            writer.write("${typeMapper.map(vType)} $vName")
-                            if (stmt.initializer != null) {
-                                writer.write(" = ")
-                                emit(stmt.initializer)
-                            }
-                            writer.write("; ")
-                            writer.write("$finalResVar = $vName; ")
-                        } else {
-                            statementEmitter?.emit(stmt) ?: writer.write("/* StatementEmitter not set */ ")
-                        }
-                    } else {
-                        statementEmitter?.emit(stmt) ?: writer.write("/* StatementEmitter not set */ ")
-                    }
-                }
-                
-                writer.write("} else { ")
-                writer.write("$finalResVar = ")
-                if (innerType == Type.Number) {
-                    writer.write("__amber_rt_unbox_double(__amber_rt_unwrap($resVar))")
-                } else {
-                    writer.write("(${cInnerType})__amber_rt_unwrap($resVar)")
-                }
-                writer.write("; ")
-                writer.write("} ")
-                writer.write("$finalResVar; ")
-                writer.write("})")
-            }
-            else -> writer.write("/* unsupported expression: ${expression::class.simpleName} */")
+            is LiteralExpression -> visitLiteralExpression(expression)
+            is IdentifierExpression -> visitIdentifierExpression(expression)
+            is BinaryExpression -> visitBinaryExpression(expression)
+            is CallExpression -> visitCallExpression(expression)
+            is UnaryExpression -> visitUnaryExpression(expression)
+            is ArrayLiteralExpression -> visitArrayLiteralExpression(expression)
+            is AssignmentExpression -> visitAssignmentExpression(expression)
+            is MemberAccessExpression -> visitMemberAccessExpression(expression)
+            is StringTemplateExpression -> visitStringTemplateExpression(expression)
+            is NamedArgumentExpression -> emit(expression.value)
+            is IsExpression -> visitIsExpression(expression)
+            is IndexAccessExpression -> visitIndexAccessExpression(expression)
+            is PanicExpression -> visitPanicExpression(expression)
+            is CatchExpression -> visitCatchExpression(expression)
+            else -> context.writer.write("/* unsupported expression: ${expression::class.simpleName} */")
         }
+    }
+
+    private fun visitLiteralExpression(expression: LiteralExpression) {
+        when (val value = expression.value) {
+            is String -> context.writer.write("\"${value.replace("\"", "\\\"")}\"")
+            is Number -> context.writer.write(value.toString())
+            is Boolean -> context.writer.write(if (value) "1" else "0")
+            null -> context.writer.write("NULL")
+            else -> context.writer.write(value.toString())
+        }
+    }
+
+    private fun visitIdentifierExpression(expression: IdentifierExpression) {
+        val symbol = context.resolvedSymbols[expression]
+        if (symbol != null) {
+            emitSymbol(symbol)
+        } else {
+            context.writer.write(context.symbolEmitter.mangle(expression.name))
+        }
+    }
+
+    private fun visitBinaryExpression(expression: BinaryExpression) {
+        val leftType = context.expressionTypes[expression.left]
+        val rightType = context.expressionTypes[expression.right]
+        if (expression.operator == "+" && (leftType == Type.String || rightType == Type.String)) {
+            context.writer.write(context.symbolEmitter.runtimeHelper("str_concat"))
+            context.writer.write("(")
+            emitSegment(expression.left)
+            context.writer.write(", ")
+            emitSegment(expression.right)
+            context.writer.write(")")
+        } else if (expression.operator == "+" && (leftType is Type.ArrayList || leftType is Type.List)) {
+            context.writer.write("({ ")
+            context.writer.write("${context.typeMapper.map(leftType)} _l = ")
+            emit(expression.left)
+            context.writer.write("; ")
+            context.writer.write(context.symbolEmitter.runtimeHelper("list_push"))
+            context.writer.write("(_l, ")
+            emit(expression.right, Type.Any)
+            context.writer.write("); _l; })")
+        } else if ((expression.operator == "==" || expression.operator == "!=") && leftType == Type.String) {
+            if (expression.operator == "!=") context.writer.write("!")
+            context.writer.write("strcmp(")
+            emit(expression.left)
+            context.writer.write(", ")
+            emit(expression.right)
+            context.writer.write(") == 0")
+        } else {
+            context.writer.write("(")
+            emit(expression.left)
+            context.writer.write(" ${expression.operator} ")
+            emit(expression.right)
+            context.writer.write(")")
+        }
+    }
+
+    private fun visitCallExpression(expression: CallExpression) {
+        val calleeType = context.expressionTypes[expression.callee]
+        if (calleeType is Type.Struct) {
+            emitStructConstruction(expression, calleeType)
+            return
+        }
+
+        val calleeSymbol = context.resolvedSymbols[expression.callee]
+        val functionType = calleeSymbol?.type as? Type.Function
+        val isExtension = calleeSymbol?.isExtension == true
+
+        emit(expression.callee)
+        context.writer.write("(")
+
+        if (isExtension && functionType != null) {
+            val receiver = (expression.callee as? MemberAccessExpression)?.target
+            if (receiver != null) {
+                val receiverType = functionType.parameterTypes[0]
+                val isMutated = functionType.isParameterMutated.getOrElse(0) { false }
+                if (isMutated && isPrimitive(receiverType)) {
+                    context.writer.write("&")
+                }
+                emit(receiver, receiverType)
+                if (expression.arguments.isNotEmpty()) context.writer.write(", ")
+            }
+        }
+
+        expression.arguments.forEachIndexed { index, arg ->
+            val mutationIndex = if (isExtension) index + 1 else index
+            val paramType = functionType?.parameterTypes?.getOrNull(mutationIndex) ?: Type.Any
+            val isMutated = functionType?.isParameterMutated?.getOrNull(mutationIndex) ?: false
+
+            if (isMutated && isPrimitive(paramType)) {
+                context.writer.write("&")
+            }
+
+            emit(arg, paramType)
+
+            if (index < expression.arguments.size - 1) {
+                context.writer.write(", ")
+            }
+        }
+        context.writer.write(")")
+    }
+
+    private fun visitUnaryExpression(expression: UnaryExpression) {
+        context.writer.write(expression.operator)
+        emit(expression.operand)
+    }
+
+    private fun visitArrayLiteralExpression(expression: ArrayLiteralExpression) {
+        context.writer.write(context.symbolEmitter.runtimeHelper("create_list"))
+        context.writer.write("(")
+        context.writer.write(expression.elements.size.toString())
+        expression.elements.forEach { arg ->
+            context.writer.write(", ")
+            emit(arg, Type.Any)
+        }
+        context.writer.write(")")
+    }
+
+    private fun visitAssignmentExpression(expression: AssignmentExpression) {
+        val target = expression.target
+        if (target is IdentifierExpression) {
+            val symbol = context.resolvedSymbols[target]
+            val name = symbol?.let { context.symbolEmitter.mangle(it.name, it.namespace) } ?: context.symbolEmitter.mangle(target.name)
+            if (symbol != null && symbol.isParameter && symbol.isMutated && isPrimitive(symbol.type)) {
+                context.writer.write("(*$name)")
+            } else {
+                context.writer.write(name)
+            }
+            context.writer.write(" = ")
+            val targetType = context.expressionTypes[target] ?: Type.Any
+            emit(expression.value, targetType)
+        } else if (target is IndexAccessExpression) {
+            val targetType = context.expressionTypes[target.target]
+            if (targetType is Type.List || targetType is Type.ArrayList || targetType == Type.Any) {
+                context.writer.write(context.symbolEmitter.runtimeHelper("list_set"))
+                context.writer.write("(")
+                emit(target.target)
+                context.writer.write(", ")
+                emit(target.index)
+                context.writer.write(", ")
+                emit(expression.value, Type.Any)
+                context.writer.write(")")
+            } else {
+                emitRaw(target)
+                context.writer.write(" = ")
+                val valType = context.expressionTypes[target] ?: Type.Any
+                emit(expression.value, valType)
+            }
+        } else {
+            emitRaw(target)
+            context.writer.write(" = ")
+            val targetType = context.expressionTypes[target] ?: Type.Any
+            emit(expression.value, targetType)
+        }
+    }
+
+    private fun visitMemberAccessExpression(expression: MemberAccessExpression) {
+        val targetType = context.expressionTypes[expression.target]
+        if (targetType is Type.EnumNamespace) {
+            val enumType = targetType.enumType
+            context.writer.write(context.symbolEmitter.mangle("${enumType.name}_${expression.member.name}", enumType.moduleNamespace))
+            return
+        }
+
+        val symbol = context.resolvedSymbols[expression]
+        if (symbol != null) {
+            emitSymbol(symbol)
+        } else {
+            emit(expression.target)
+            context.writer.write(".")
+            context.writer.write(expression.member.name)
+        }
+    }
+
+    private fun visitStringTemplateExpression(expression: StringTemplateExpression) {
+        emitStringTemplate(expression.segments)
+    }
+
+    private fun visitIsExpression(expression: IsExpression) {
+        val descriptor = when (val targetType = context.resolvedIsTypes[expression]) {
+            is Type.Number -> "&__amber_type_double"
+            is Type.String -> "&__amber_type_string"
+            is Type.Boolean -> "&__amber_type_bool"
+            is Type.List, is Type.ArrayList -> "&__amber_type_list"
+            is Type.Enum -> "&${context.symbolEmitter.mangle("type_${targetType.name}", targetType.moduleNamespace)}"
+            is Type.Struct -> "&${context.symbolEmitter.mangle("type_${targetType.name}", targetType.namespace)}"
+            else -> "NULL"
+        }
+        context.writer.write("__amber_rt_is_type(")
+        emit(expression.left, Type.Any)
+        context.writer.write(", $descriptor)")
+    }
+
+    private fun visitIndexAccessExpression(expression: IndexAccessExpression) {
+        val targetType = context.expressionTypes[expression.target]
+        if (targetType is Type.List || targetType is Type.ArrayList || targetType == Type.Any) {
+            val elementType = when (targetType) {
+                is Type.List -> targetType.elementType
+                is Type.ArrayList -> targetType.elementType
+                else -> Type.Any
+            }
+            val boxFunc = when (elementType) {
+                Type.Number -> "__amber_rt_unbox_double"
+                Type.Boolean -> "__amber_rt_unbox_bool"
+                Type.String -> "__amber_rt_unbox_string"
+                Type.Char -> "__amber_rt_unbox_char"
+                is Type.Enum -> "__amber_rt_unbox_enum"
+                is Type.Struct -> "__amber_rt_unbox_${context.symbolEmitter.mangleStruct(elementType.name, elementType.namespace)}"
+                else -> ""
+            }
+            if (boxFunc.isNotEmpty()) {
+                context.writer.write("$boxFunc(")
+            }
+            context.writer.write(context.symbolEmitter.runtimeHelper("list_get"))
+            context.writer.write("(")
+            emit(expression.target)
+            context.writer.write(", ")
+            emit(expression.index)
+            context.writer.write(")")
+            if (boxFunc.isNotEmpty()) {
+                context.writer.write(")")
+            }
+        } else if (targetType == Type.String) {
+            context.writer.write(context.symbolEmitter.runtimeHelper("str_get"))
+            context.writer.write("(")
+            emit(expression.target)
+            context.writer.write(", ")
+            emit(expression.index)
+            context.writer.write(")")
+        } else {
+            emit(expression.target)
+            context.writer.write("[")
+            emit(expression.index)
+            context.writer.write("]")
+        }
+    }
+
+    private fun visitPanicExpression(expression: PanicExpression) {
+        if (expression.isFatal) {
+            context.writer.write("__amber_rt_panic(")
+            if (expression.message != null) emit(expression.message) else context.writer.write("\"panic\"")
+            context.writer.write(")")
+        } else {
+            context.writer.write("__amber_rt_result_error(")
+            if (expression.message != null) emit(expression.message) else context.writer.write("\"error\"")
+            context.writer.write(")")
+        }
+    }
+
+    private fun visitCatchExpression(expression: CatchExpression) {
+        val targetType = context.expressionTypes[expression.target]
+        if (targetType !is Type.Unsafe && targetType != Type.Error) {
+            emit(expression.target)
+            return
+        }
+        val innerType = if (targetType is Type.Unsafe) targetType.innerType else Type.Any
+        val cInnerType = context.typeMapper.map(innerType)
+
+        val resVar = context.symbolEmitter.nextTemp()
+        val finalResVar = context.symbolEmitter.nextTemp()
+
+        context.writer.write("({ ")
+        context.writer.write("struct AMBER_RESULT $resVar = ")
+        emit(expression.target)
+        context.writer.write("; ")
+        context.writer.write("$cInnerType $finalResVar; ")
+        context.writer.write("if (__amber_rt_is_error($resVar)) { ")
+
+        if (expression.errorVarName != "_" && expression.errorVarName.isNotEmpty()) {
+            context.writer.write("const char* ${context.symbolEmitter.mangle(expression.errorVarName)} = $resVar.error_message; ")
+        }
+
+        expression.body.statements.forEachIndexed { index, stmt ->
+            val isLast = index == expression.body.statements.size - 1
+            if (isLast) {
+                if (stmt is ExpressionStatement) {
+                    val expr = stmt.expression
+                    if (context.expressionTypes[expr] == Type.Nothing) {
+                        emit(expr)
+                        context.writer.write("; ")
+                    } else {
+                        context.writer.write("$finalResVar = ")
+                        emit(expr)
+                        context.writer.write("; ")
+                    }
+                } else if (stmt is VariableDeclaration) {
+                    val vSymbol = context.resolvedSymbols[stmt.name]
+                    val vType = context.expressionTypes[stmt.initializer] ?: vSymbol?.type ?: Type.Any
+                    val vName = vSymbol?.let { context.symbolEmitter.mangle(it.name, it.namespace) } ?: context.symbolEmitter.mangle(stmt.name.name)
+                    context.writer.write("${context.typeMapper.map(vType)} $vName")
+                    if (stmt.initializer != null) {
+                        context.writer.write(" = ")
+                        emit(stmt.initializer)
+                    }
+                    context.writer.write("; ")
+                    context.writer.write("$finalResVar = $vName; ")
+                } else {
+                    statementEmitter?.emit(stmt) ?: context.writer.write("/* StatementEmitter not set */ ")
+                }
+            } else {
+                statementEmitter?.emit(stmt) ?: context.writer.write("/* StatementEmitter not set */ ")
+            }
+        }
+
+        context.writer.write("} else { ")
+        context.writer.write("$finalResVar = ")
+        if (innerType == Type.Number) {
+            context.writer.write("__amber_rt_unbox_double(__amber_rt_unwrap($resVar))")
+        } else {
+            context.writer.write("(${cInnerType})__amber_rt_unwrap($resVar)")
+        }
+        context.writer.write("; ")
+        context.writer.write("} ")
+        context.writer.write("$finalResVar; ")
+        context.writer.write("})")
     }
 
     private fun isPrimitive(type: Type): Boolean {
@@ -430,105 +393,90 @@ class ExpressionEmitter(
     }
 
     private fun emitSymbol(symbol: Symbol) {
-        val platformName = runtimeProvider.getPlatformName(symbol)
+        val platformName = context.runtimeProvider.getPlatformName(symbol)
         if (platformName != null) {
-            writer.write(symbolEmitter.runtimeHelper(platformName))
+            context.writer.write(context.symbolEmitter.runtimeHelper(platformName))
         } else {
             val name = if (symbol.isExtension) {
                 val funcType = symbol.type as Type.Function
-                symbolEmitter.mangleExtension(symbol.name, funcType.parameterTypes[0], symbol.namespace)
+                context.symbolEmitter.mangleExtension(symbol.name, funcType.parameterTypes[0], symbol.namespace)
             } else {
-                symbolEmitter.mangle(symbol.name, symbol.namespace)
+                context.symbolEmitter.mangle(symbol.name, symbol.namespace)
             }
 
             if (symbol.isParameter && symbol.isMutated && isPrimitive(symbol.type)) {
-                writer.write("(*$name)")
+                context.writer.write("(*$name)")
             } else {
-                writer.write(name)
+                context.writer.write(name)
             }
         }
     }
 
     private fun emitStringTemplate(segments: List<Expression>) {
-        if (segments.isEmpty()) {
-            writer.write("\"\"")
-            return
-        }
         if (segments.size == 1) {
-            emitSegment(segments[0])
+            emit(segments[0], Type.String)
             return
         }
-        writer.write("__amber_rt_str_concat_multi(")
-        writer.write("${segments.size}, ")
-        segments.forEachIndexed { index, segment ->
-            emitSegment(segment)
-            if (index < segments.size - 1) writer.write(", ")
-        }
-        writer.write(")")
-    }
 
-    private fun emitStructConstruction(call: CallExpression, structType: Type.Struct) {
-        val mangledName = symbolEmitter.mangleStruct(structType.name, structType.namespace)
-        writer.write("({ ")
-        writer.write("$mangledName __am_tmp = {0}; ")
-
-        val fieldMap = structType.fields
-        val supplied = mutableMapOf<String, Expression>()
-
-        var positionalIndex = 0
-        call.arguments.forEach { arg ->
-            if (arg is NamedArgumentExpression) {
-                supplied[arg.name.name] = arg.value
-            } else {
-                val fieldName = fieldMap.keys.toList().getOrNull(positionalIndex++)
-                if (fieldName != null) {
-                    supplied[fieldName] = arg
+        context.writer.write(context.symbolEmitter.runtimeHelper("str_concat_multi"))
+        context.writer.write("(${segments.size}")
+        segments.forEach { segment ->
+            context.writer.write(", ")
+            val type = context.expressionTypes[segment]
+            when (type) {
+                Type.Number -> {
+                    context.writer.write(context.symbolEmitter.runtimeHelper("from_num"))
+                    context.writer.write("(")
+                    emit(segment)
+                    context.writer.write(")")
+                }
+                Type.String -> {
+                    emit(segment)
+                }
+                else -> {
+                    context.writer.write(context.symbolEmitter.runtimeHelper("to_string"))
+                    context.writer.write("(")
+                    emit(segment, Type.Any)
+                    context.writer.write(")")
                 }
             }
         }
-
-        fieldMap.values.forEach { field ->
-            writer.write("__am_tmp.${field.name} = ")
-            val expr = supplied[field.name]
-            if (expr != null) {
-                emit(expr, field.type)
-            } else if (field.defaultValue != null) {
-                emit(field.defaultValue, field.type)
-            } else {
-                writer.write("0")
-            }
-            writer.write("; ")
-        }
-
-        writer.write("__am_tmp; })")
+        context.writer.write(")")
     }
 
-    private fun emitSegment(expr: Expression) {
-        val type = expressionTypes[expr] ?: Type.Any
+    private fun emitStructConstruction(expression: CallExpression, structType: Type.Struct) {
+        val mangledName = context.symbolEmitter.mangleStruct(structType.name, structType.namespace)
+        context.writer.write("({ $mangledName __am_tmp = {0}; ")
+        
+        expression.arguments.forEachIndexed { index, arg ->
+            val field = structType.fields.values.elementAtOrNull(index)
+            if (field != null) {
+                context.writer.write("__am_tmp.${field.name} = ")
+                emit(arg, field.type)
+                context.writer.write("; ")
+            }
+        }
+        
+        context.writer.write("__am_tmp; })")
+    }
+
+    private fun emitSegment(expression: Expression) {
+        val type = context.expressionTypes[expression]
         when (type) {
-            Type.String -> emit(expr)
             Type.Number -> {
-                writer.write("__amber_rt_from_num(")
-                emitRaw(expr)
-                writer.write(")")
+                context.writer.write(context.symbolEmitter.runtimeHelper("from_num"))
+                context.writer.write("(")
+                emit(expression)
+                context.writer.write(")")
             }
-
-            Type.Char -> {
-                writer.write("__amber_rt_char_to_string_direct(")
-                emitRaw(expr)
-                writer.write(")")
+            Type.String -> {
+                emit(expression)
             }
-
-            Type.Boolean -> {
-                writer.write("(__amber_rt_unbox_bool(")
-                emitRaw(expr)
-                writer.write(") ? \"true\" : \"false\")")
-            }
-
             else -> {
-                writer.write("__amber_rt_to_string(")
-                emit(expr, Type.Any)
-                writer.write(")")
+                context.writer.write(context.symbolEmitter.runtimeHelper("to_string"))
+                context.writer.write("(")
+                emit(expression, Type.Any)
+                context.writer.write(")")
             }
         }
     }

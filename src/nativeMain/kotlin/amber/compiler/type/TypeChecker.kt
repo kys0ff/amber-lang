@@ -206,14 +206,14 @@ class TypeChecker(
             }
         }
 
-        // Pass 1.2: Register extensions
-        program.statements.filterIsInstance<ExtensionDeclaration>().forEach {
-            preRegisterExtension(it)
-        }
-
         // Pass 1.5: Resolve struct fields and check defaults
         program.statements.filterIsInstance<StructDeclaration>().forEach {
             resolveStructFields(it)
+        }
+
+        // Pass 1.6: Register extensions
+        program.statements.filterIsInstance<ExtensionDeclaration>().forEach {
+            preRegisterExtension(it)
         }
 
         // Pass 1.6: Cycle detection in struct defaults
@@ -1126,13 +1126,6 @@ class TypeChecker(
             val field = targetType.fields[memberName]
             if (field != null) {
                 return field.type
-            } else {
-                reportError(
-                    memberAccess.member,
-                    "struct '${targetType.name}' has no field '$memberName'",
-                    "check for typos or ensure the field exists"
-                )
-                return Type.Error
             }
         }
 

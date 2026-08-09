@@ -4,7 +4,6 @@ import amber.compiler.ast.BlockStatement
 import amber.compiler.ast.BreakStatement
 import amber.compiler.ast.ContinueStatement
 import amber.compiler.ast.EnumDeclaration
-import amber.compiler.ast.Expression
 import amber.compiler.ast.ExpressionStatement
 import amber.compiler.ast.ExtensionDeclaration
 import amber.compiler.ast.ForStatement
@@ -17,400 +16,344 @@ import amber.compiler.ast.Statement
 import amber.compiler.ast.StructDeclaration
 import amber.compiler.ast.VariableDeclaration
 import amber.compiler.ast.WhileStatement
-import amber.compiler.symbol.Symbol
 import amber.compiler.type.Type
 
 class StatementEmitter(
-    private val writer: CodeWriter,
-    private val expressionEmitter: ExpressionEmitter,
-    private val symbolEmitter: SymbolEmitter,
-    private val typeMapper: CTypeMapper,
-    private val expressionTypes: Map<Expression, Type>,
-    private val resolvedSymbols: Map<Expression, Symbol>
+    private val context: CGenerationContext,
+    private val expressionEmitter: ExpressionEmitter
 ) {
     private val returnTypeStack = mutableListOf<Type>()
 
-    fun emit(statement: Statement, declarationOnly: Boolean = false, isTopLevel: Boolean = false) {
+    fun emit(
+        statement: Statement,
+        declarationOnly: Boolean = false,
+        isTopLevel: Boolean = false
+    ) {
         when (statement) {
-            is BlockStatement -> {
-                writer.writeLine("{")
-                writer.indent()
-                statement.statements.forEach { emit(it) }
-                writer.dedent()
-                writer.writeLine("}")
-            }
-
-            is VariableDeclaration -> {
-                val symbol = resolvedSymbols[statement.name]
-                val type = symbol?.type ?: expressionTypes[statement.initializer] ?: Type.Any
-                val cType = typeMapper.map(type)
-                val name = symbol?.let { symbolEmitter.mangle(it.name, it.namespace) }
-                    ?: symbolEmitter.mangle(statement.name.name)
-
-                if (declarationOnly) {
-                    writer.writeLine("$cType ${name};")
-                } else {
-                    if (isTopLevel) {
-                        if (statement.initializer != null) {
-                            writer.write("$name = ")
-                            expressionEmitter.emit(statement.initializer, symbol?.type)
-                            writer.writeLine(";")
-                        }
-                    } else {
-                        writer.write("$cType $name")
-                        if (statement.initializer != null) {
-                            writer.write(" = ")
-                            expressionEmitter.emit(statement.initializer, symbol?.type)
-                        }
-                        writer.writeLine(";")
-                    }
-                }
-            }
-
-            is FunctionDeclaration -> {
-                val symbol = resolvedSymbols[statement.name]
-                val functionType = symbol?.type as? Type.Function
-                val returnType = functionType?.returnType ?: Type.Unit
-                val isExtension = symbol?.isExtension == true
-
-                val cReturnType = typeMapper.map(returnType)
-                val name = symbol?.let {
-                    if (isExtension && functionType != null) {
-                        symbolEmitter.mangleExtension(it.name, functionType.parameterTypes[0], it.namespace)
-                    } else {
-                        symbolEmitter.mangle(it.name, it.namespace)
-                    }
-                } ?: symbolEmitter.mangle(statement.name.name)
-                writer.write("$cReturnType ${name}(")
-
-                if (isExtension && functionType != null) {
-                    val receiverType = functionType.parameterTypes[0]
-                    val isMutated = functionType.isParameterMutated.getOrElse(0) { false }
-                    writer.write("${typeMapper.mapParameter(receiverType, isMutated)} ${symbolEmitter.mangle("self")}")
-                    if (statement.parameters.isNotEmpty()) writer.write(", ")
-                }
-
-                statement.parameters.forEachIndexed { index, param ->
-                    val paramSymbol = resolvedSymbols[param.name]
-                    val paramType = paramSymbol?.type ?: Type.Any
-                    val funcType = symbol?.type as? Type.Function
-                    val mutationIndex = if (isExtension) index + 1 else index
-                    val isMutated =
-                        funcType?.isParameterMutated?.getOrElse(mutationIndex) { false } ?: false
-                    val paramName = paramSymbol?.let { symbolEmitter.mangle(it.name, it.namespace) }
-                        ?: symbolEmitter.mangle(param.name.name)
-                    writer.write("${typeMapper.mapParameter(paramType, isMutated)} $paramName")
-                    if (index < statement.parameters.size - 1) writer.write(", ")
-                }
-                if (declarationOnly) {
-                    writer.writeLine(");")
-                } else {
-                    writer.writeLine(") {")
-                    writer.indent()
-                    returnTypeStack.add(returnType)
-                    statement.body?.statements?.forEachIndexed { index, bodyStmt ->
-                        val isLast = index == statement.body.statements.size - 1
-                        if (isLast && bodyStmt is ExpressionStatement && returnType != Type.Unit) {
-                            emit(
-                                ReturnStatement(
-                                    bodyStmt.expression,
-                                    bodyStmt.line,
-                                    bodyStmt.column
-                                )
-                            )
-                        } else {
-                            emit(bodyStmt)
-                        }
-                    }
-                    returnTypeStack.removeAt(returnTypeStack.size - 1)
-                    writer.dedent()
-                    writer.writeLine("}")
-                }
-            }
-
-            is ExpressionStatement -> {
-                val expr = statement.expression
-                val currentReturnType = returnTypeStack.lastOrNull()
-
-                if (expr is PanicExpression && !expr.isFatal && currentReturnType is Type.Unsafe) {
-                    writer.write("return ")
-                    expressionEmitter.emit(expr)
-                } else {
-                    expressionEmitter.emit(expr)
-                }
-                writer.writeLine(";")
-            }
-
-            is IfStatement -> {
-                writer.write("if (")
-                expressionEmitter.emit(statement.condition)
-                writer.writeLine(") {")
-                writer.indent()
-                emit(statement.thenBranch)
-                writer.dedent()
-                writer.writeLine("}")
-                if (statement.elseBranch != null) {
-                    writer.writeLine("else {")
-                    writer.indent()
-                    emit(statement.elseBranch)
-                    writer.dedent()
-                    writer.writeLine("}")
-                }
-            }
-
+            is VariableDeclaration -> visitVariableDeclaration(statement, declarationOnly, isTopLevel)
+            is FunctionDeclaration -> visitFunctionDeclaration(statement, declarationOnly)
+            is ExpressionStatement -> visitExpressionStatement(statement)
+            is IfStatement -> visitIfStatement(statement)
             is WhileStatement -> visitWhileStatement(statement)
             is ForStatement -> visitForStatement(statement)
-            is BreakStatement -> writer.writeLine("break;")
-            is ContinueStatement -> writer.writeLine("continue;")
+            is BreakStatement -> context.writer.writeLine("break;")
+            is ContinueStatement -> context.writer.writeLine("continue;")
             is ReturnStatement -> visitReturnStatement(statement)
-            is EnumDeclaration -> {
-                val symbol = resolvedSymbols[statement.name]
-                val enumType = symbol?.type as? Type.EnumNamespace
-                val ns = enumType?.enumType?.moduleNamespace
-                val enumName = statement.name.name
-
-                val variantsVar = symbolEmitter.mangle("variants_$enumName", ns)
-                writer.writeLine("const char* $variantsVar[] = { ${statement.variants.joinToString(", ") { "\"${it.name}\"" }} };")
-
-                val toStringFunc = symbolEmitter.mangle("${enumName}_to_string", ns)
-                writer.writeLine("static char* $toStringFunc(void* val) {")
-                writer.indent()
-                writer.writeLine("__amber_box_enum_t* e = (__amber_box_enum_t*)val;")
-                writer.writeLine("if (e->value >= 0 && e->value < ${statement.variants.size}) return (char*)$variantsVar[e->value];")
-                writer.writeLine("return \"unknown\";")
-                writer.dedent()
-                writer.writeLine("}")
-
-                writer.writeLine("typedef enum {")
-                writer.indent()
-                statement.variants.forEachIndexed { index, variant ->
-                    writer.writeLine(
-                        "${
-                            symbolEmitter.mangle(
-                                "${enumName}_${variant.name}",
-                                ns
-                            )
-                        }${if (index < statement.variants.size - 1) "," else ""}"
-                    )
-                }
-                writer.dedent()
-                writer.writeLine("} ${symbolEmitter.mangle(enumName, ns)};")
-                writer.writeLine(
-                    "__amber_type_t ${
-                        symbolEmitter.mangle(
-                            "type_$enumName",
-                            ns
-                        )
-                    } = { \"$enumName\", ${100 + (ns ?: "").hashCode() + enumName.hashCode()}, $variantsVar, ${statement.variants.size}, $toStringFunc };"
-                )
-            }
-
-            is StructDeclaration -> {
-                val symbol = resolvedSymbols[statement.name]
-                val structType = symbol?.type as? Type.Struct
-                val ns = structType?.namespace
-                val structName = statement.name.name
-                val mangledName = symbolEmitter.mangleStruct(structName, ns)
-
-                writer.writeLine("typedef struct {")
-                writer.indent()
-                structType?.fields?.values?.forEach { field ->
-                    writer.writeLine("${typeMapper.map(field.type)} ${field.name};")
-                }
-                writer.dedent()
-                writer.writeLine("} $mangledName;")
-
-                val boxName = "${mangledName}_box"
-                writer.writeLine("typedef struct {")
-                writer.indent()
-                writer.writeLine("__amber_header_t header;")
-                writer.writeLine("$mangledName value;")
-                writer.dedent()
-                writer.writeLine("} $boxName;")
-
-                val toStringFunc = symbolEmitter.mangle("${structName}_to_string", ns)
-                writer.writeLine("static char* $toStringFunc(void* val) {")
-                writer.indent()
-                writer.writeLine("$boxName* b = ($boxName*)val;")
-                writer.writeLine("char* res = \"$structName { \";")
-                structType?.fields?.values?.forEachIndexed { index, field ->
-                    writer.write("res = __amber_rt_str_concat(res, \"${field.name}: \");")
-                    val boxFunc = when (field.type) {
-                        Type.Number -> "__amber_rt_box_double"
-                        Type.Boolean -> "__amber_rt_box_bool"
-                        Type.String -> "__amber_rt_box_string"
-                        is Type.Enum -> "__amber_rt_box_enum" // Simplified, needs type descriptor
-                        is Type.Struct -> "__amber_rt_box_${
-                            symbolEmitter.mangle(
-                                field.type.name,
-                                field.type.namespace
-                            )
-                        }"
-
-                        else -> ""
-                    }
-                    if (boxFunc.isNotEmpty()) {
-                        if (field.type is Type.Enum) {
-                            writer.write(
-                                "res = __amber_rt_str_concat(res, __amber_rt_to_string($boxFunc(b->value.${field.name}, &${
-                                    symbolEmitter.mangle(
-                                        "type_${field.type.name}",
-                                        field.type.moduleNamespace
-                                    )
-                                })));"
-                            )
-                        } else {
-                            writer.write("res = __amber_rt_str_concat(res, __amber_rt_to_string($boxFunc(b->value.${field.name})));")
-                        }
-                    } else {
-                        writer.write("res = __amber_rt_str_concat(res, __amber_rt_to_string(b->value.${field.name}));")
-                    }
-                    if (index < structType.fields.size - 1) {
-                        writer.write("res = __amber_rt_str_concat(res, \", \");")
-                    }
-                }
-                writer.writeLine("res = __amber_rt_str_concat(res, \" }\");")
-                writer.writeLine("return res;")
-                writer.dedent()
-                writer.writeLine("}")
-                writer.writeLine()
-                writer.writeLine(
-                    "__amber_type_t ${
-                        symbolEmitter.mangle(
-                            "type_$structName",
-                            ns
-                        )
-                    } = { \"$structName\", ${200 + (ns ?: "").hashCode() + structName.hashCode()}, NULL, 0, $toStringFunc };"
-                )
-
-                writer.writeLine("static inline void* __amber_rt_box_$mangledName($mangledName v) {")
-                writer.indent()
-                writer.writeLine("$boxName* p = ($boxName*)__amber_rt_alloc(sizeof($boxName));")
-                writer.writeLine(
-                    "p->header.type = &${
-                        symbolEmitter.mangle(
-                            "type_$structName",
-                            ns
-                        )
-                    };"
-                )
-                writer.writeLine("p->value = v;")
-                writer.writeLine("return p;")
-                writer.dedent()
-                writer.writeLine("}")
-
-                writer.writeLine("static inline $mangledName __amber_rt_unbox_$mangledName(void* p) {")
-                writer.indent()
-                writer.writeLine("if (!p) { $mangledName v = {0}; return v; }")
-                writer.writeLine("return (($boxName*)p)->value;")
-                writer.dedent()
-                writer.writeLine("}")
-            }
-
+            is EnumDeclaration -> visitEnumDeclaration(statement)
+            is StructDeclaration -> visitStructDeclaration(statement)
             is ExtensionDeclaration -> {}
+            is BlockStatement -> visitBlockStatement(statement)
             is ImportStatement -> {}
         }
     }
 
-    private fun visitWhileStatement(statement: WhileStatement) {
-        writer.write("while (")
+    private fun visitVariableDeclaration(statement: VariableDeclaration, declarationOnly: Boolean, isTopLevel: Boolean) {
+        if (statement.isIntrinsic) return
+        val symbol = context.resolvedSymbols[statement.name]
+        val type = context.expressionTypes[statement.initializer] ?: symbol?.type ?: Type.Any
+        val name = symbol?.let { context.symbolEmitter.mangle(it.name, it.namespace) }
+            ?: context.symbolEmitter.mangle(statement.name.name)
+
+        if (declarationOnly) {
+            context.writer.writeLine("extern ${context.typeMapper.map(type)} $name;")
+        } else {
+            if (isTopLevel) {
+                context.writer.write("${context.typeMapper.map(type)} $name")
+            } else {
+                context.writer.write("${context.typeMapper.map(type)} $name")
+            }
+            if (statement.initializer != null) {
+                context.writer.write(" = ")
+                expressionEmitter.emit(statement.initializer, type)
+            }
+            context.writer.writeLine(";")
+        }
+    }
+
+    private fun visitFunctionDeclaration(statement: FunctionDeclaration, declarationOnly: Boolean) {
+        val symbol = context.resolvedSymbols[statement.name]
+        val functionType = symbol?.type as? Type.Function
+        val returnType = functionType?.returnType ?: Type.Unit
+        val isExtension = symbol?.isExtension == true
+
+        val cReturnType = context.typeMapper.map(returnType)
+        val name = symbol?.let {
+            if (isExtension && functionType != null) {
+                context.symbolEmitter.mangleExtension(it.name, functionType.parameterTypes[0], it.namespace)
+            } else {
+                context.symbolEmitter.mangle(it.name, it.namespace)
+            }
+        } ?: context.symbolEmitter.mangle(statement.name.name)
+        context.writer.write("$cReturnType ${name}(")
+
+        if (isExtension && functionType != null) {
+            val receiverType = functionType.parameterTypes[0]
+            val isMutated = functionType.isParameterMutated.getOrElse(0) { false }
+            context.writer.write("${context.typeMapper.mapParameter(receiverType, isMutated)} ${context.symbolEmitter.mangle("self")}")
+            if (statement.parameters.isNotEmpty()) context.writer.write(", ")
+        }
+
+        statement.parameters.forEachIndexed { index, param ->
+            val paramSymbol = context.resolvedSymbols[param.name]
+            val paramType = paramSymbol?.type ?: Type.Any
+            val funcType = symbol?.type as? Type.Function
+            val mutationIndex = if (isExtension) index + 1 else index
+            val isMutated = funcType?.isParameterMutated?.getOrElse(mutationIndex) { false } ?: false
+            val paramName = paramSymbol?.let { context.symbolEmitter.mangle(it.name, it.namespace) }
+                ?: context.symbolEmitter.mangle(param.name.name)
+            context.writer.write("${context.typeMapper.mapParameter(paramType, isMutated)} $paramName")
+            if (index < statement.parameters.size - 1) context.writer.write(", ")
+        }
+
+        if (declarationOnly) {
+            context.writer.writeLine(");")
+        } else {
+            context.writer.writeLine(") {")
+            context.writer.indent()
+            returnTypeStack.add(returnType)
+            statement.body?.statements?.forEachIndexed { index, bodyStmt ->
+                val isLast = index == statement.body.statements.size - 1
+                if (isLast && bodyStmt is ExpressionStatement && returnType != Type.Unit) {
+                    visitReturnStatement(ReturnStatement(bodyStmt.expression, bodyStmt.line, bodyStmt.column))
+                } else {
+                    emit(bodyStmt)
+                }
+            }
+            returnTypeStack.removeAt(returnTypeStack.size - 1)
+            context.writer.dedent()
+            context.writer.writeLine("}")
+        }
+    }
+
+    private fun visitExpressionStatement(statement: ExpressionStatement) {
+        val expr = statement.expression
+        val currentReturnType = returnTypeStack.lastOrNull()
+
+        if (expr is PanicExpression && !expr.isFatal && currentReturnType is Type.Unsafe) {
+            context.writer.write("return ")
+            expressionEmitter.emit(expr)
+        } else {
+            expressionEmitter.emit(expr)
+        }
+        context.writer.writeLine(";")
+    }
+
+    private fun visitIfStatement(statement: IfStatement) {
+        context.writer.write("if (")
         expressionEmitter.emit(statement.condition)
-        writer.writeLine(") {")
-        writer.indent()
+        context.writer.writeLine(") {")
+        context.writer.indent()
+        emit(statement.thenBranch)
+        context.writer.dedent()
+        context.writer.writeLine("}")
+        if (statement.elseBranch != null) {
+            context.writer.writeLine("else {")
+            context.writer.indent()
+            emit(statement.elseBranch)
+            context.writer.dedent()
+            context.writer.writeLine("}")
+        }
+    }
+
+    private fun visitWhileStatement(statement: WhileStatement) {
+        context.writer.write("while (")
+        expressionEmitter.emit(statement.condition)
+        context.writer.writeLine(") {")
+        context.writer.indent()
         emit(statement.body)
-        writer.dedent()
-        writer.writeLine("}")
+        context.writer.dedent()
+        context.writer.writeLine("}")
     }
 
     private fun visitForStatement(statement: ForStatement) {
-        val iterableType = expressionTypes[statement.iterable] ?: Type.Any
-        val cIterableType = typeMapper.map(iterableType)
-        val iterableVar = symbolEmitter.nextTemp()
+        val iterableType = context.expressionTypes[statement.iterable]
+        val itemSymbol = context.resolvedSymbols[statement.itemName]
+        val itemName = itemSymbol?.let { context.symbolEmitter.mangle(it.name, it.namespace) }
+            ?: context.symbolEmitter.mangle(statement.itemName.name)
+        val itemType = itemSymbol?.type ?: Type.Any
 
-        writer.writeLine("{")
-        writer.indent()
+        if (iterableType is Type.List || iterableType is Type.ArrayList || iterableType == Type.Any) {
+            val listVar = context.symbolEmitter.nextTemp()
+            val indexVar = context.symbolEmitter.nextTemp()
+            context.writer.writeLine("{")
+            context.writer.indent()
+            context.writer.write("${context.typeMapper.map(iterableType)} $listVar = ")
+            expressionEmitter.emit(statement.iterable)
+            context.writer.writeLine(";")
+            context.writer.writeLine("for (int $indexVar = 0; $indexVar < __amber_rt_list_len($listVar); $indexVar++) {")
+            context.writer.indent()
 
-        // Cache the iterable
-        writer.write("$cIterableType $iterableVar = ")
-        expressionEmitter.emit(statement.iterable)
-        writer.writeLine(";")
+            val elementType = when (iterableType) {
+                is Type.List -> iterableType.elementType
+                is Type.ArrayList -> iterableType.elementType
+                else -> Type.Any
+            }
 
-        val indexVar = if (statement.indexName != null) {
-            symbolEmitter.mangle(statement.indexName.name)
-        } else {
-            symbolEmitter.nextTemp()
-        }
-
-        val itemName = symbolEmitter.mangle(statement.itemName.name)
-        val itemType = resolvedSymbols[statement.itemName]?.type ?: Type.Any
-        val cItemType = typeMapper.map(itemType)
-
-        if (iterableType == Type.String) {
-            val lenVar = symbolEmitter.nextTemp()
-            writer.writeLine("int $lenVar = (int)strlen($iterableVar);")
-            writer.writeLine("for (int $indexVar = 0; $indexVar < $lenVar; $indexVar++) {")
-            writer.indent()
-            writer.writeLine("$cItemType $itemName = $iterableVar[$indexVar];")
-        } else {
-            // Assume it's a list
-            writer.writeLine("if ($iterableVar) {")
-            writer.indent()
-            writer.writeLine("for (int $indexVar = 0; $indexVar < $iterableVar->length; $indexVar++) {")
-            writer.indent()
-            val boxFunc = when (itemType) {
+            context.writer.write("${context.typeMapper.map(itemType)} $itemName = ")
+            val boxFunc = when (elementType) {
                 Type.Number -> "__amber_rt_unbox_double"
                 Type.Boolean -> "__amber_rt_unbox_bool"
                 Type.String -> "__amber_rt_unbox_string"
+                Type.Char -> "__amber_rt_unbox_char"
                 is Type.Enum -> "__amber_rt_unbox_enum"
-                is Type.Struct -> "__amber_rt_unbox_${symbolEmitter.mangleStruct(itemType.name, itemType.namespace)}"
-
+                is Type.Struct -> "__amber_rt_unbox_${context.symbolEmitter.mangleStruct(elementType.name, elementType.namespace)}"
                 else -> ""
             }
             if (boxFunc.isNotEmpty()) {
-                writer.writeLine("$cItemType $itemName = $boxFunc($iterableVar->data[$indexVar]);")
-            } else {
-                writer.writeLine("$cItemType $itemName = ($cItemType)$iterableVar->data[$indexVar];")
+                context.writer.write("$boxFunc(")
             }
+            context.writer.write("__amber_rt_list_get($listVar, $indexVar)")
+            if (boxFunc.isNotEmpty()) {
+                context.writer.write(")")
+            }
+            context.writer.writeLine(";")
+            emit(statement.body)
+            context.writer.dedent()
+            context.writer.writeLine("}")
+            context.writer.dedent()
+            context.writer.writeLine("}")
+        } else if (iterableType == Type.String) {
+            val strVar = context.symbolEmitter.nextTemp()
+            val indexVar = context.symbolEmitter.nextTemp()
+            context.writer.writeLine("{")
+            context.writer.indent()
+            context.writer.write("char* $strVar = ")
+            expressionEmitter.emit(statement.iterable)
+            context.writer.writeLine(";")
+            context.writer.writeLine("for (int $indexVar = 0; $indexVar < strlen($strVar); $indexVar++) {")
+            context.writer.indent()
+            context.writer.writeLine("${context.typeMapper.map(itemType)} $itemName = $strVar[$indexVar];")
+            emit(statement.body)
+            context.writer.dedent()
+            context.writer.writeLine("}")
+            context.writer.dedent()
+            context.writer.writeLine("}")
         }
-
-        emit(statement.body)
-
-        writer.dedent()
-        writer.writeLine("}")
-
-        if (iterableType != Type.String) {
-            writer.dedent()
-            writer.writeLine("}")
-        }
-
-        writer.dedent()
-        writer.writeLine("}")
     }
 
     private fun visitReturnStatement(statement: ReturnStatement) {
-        val currentReturnType = returnTypeStack.lastOrNull()
-        if (currentReturnType is Type.Unsafe) {
-            val exprType = statement.value?.let { expressionTypes[it] }
-            if (exprType is Type.Unsafe || exprType == Type.Nothing) {
-                writer.write("return ")
-                statement.value.let { expressionEmitter.emit(it) }
-                writer.writeLine(";")
-            } else {
-                writer.write("return __amber_rt_result_success(")
-                if (statement.value != null) {
-                    expressionEmitter.emit(statement.value, Type.Any)
-                } else {
-                    writer.write("NULL")
-                }
-                writer.writeLine(");")
-            }
-        } else {
-            writer.write("return")
-            if (statement.value != null && currentReturnType != Type.Unit) {
-                writer.write(" ")
-                expressionEmitter.emit(statement.value, currentReturnType)
-            }
-            writer.writeLine(";")
+        context.writer.write("return ")
+        if (statement.value != null) {
+            val returnType = returnTypeStack.lastOrNull() ?: Type.Any
+            expressionEmitter.emit(statement.value, returnType)
         }
+        context.writer.writeLine(";")
+    }
+
+    private fun visitEnumDeclaration(statement: EnumDeclaration) {
+        val symbol = context.resolvedSymbols[statement.name]
+        val enumType = symbol?.type as? Type.EnumNamespace
+        val ns = enumType?.enumType?.moduleNamespace
+        val enumName = statement.name.name
+
+        val variantsVar = context.symbolEmitter.mangle("variants_$enumName", ns)
+        context.writer.writeLine("const char* $variantsVar[] = { ${statement.variants.joinToString(", ") { "\"${it.name}\"" }} };")
+
+        val toStringFunc = context.symbolEmitter.mangle("${enumName}_to_string", ns)
+        context.writer.writeLine("static char* $toStringFunc(void* val) {")
+        context.writer.indent()
+        context.writer.writeLine("__amber_box_enum_t* e = (__amber_box_enum_t*)val;")
+        context.writer.writeLine("if (e->value >= 0 && e->value < ${statement.variants.size}) return (char*)$variantsVar[e->value];")
+        context.writer.writeLine("return \"unknown\";")
+        context.writer.dedent()
+        context.writer.writeLine("}")
+
+        context.writer.writeLine("typedef enum {")
+        context.writer.indent()
+        statement.variants.forEachIndexed { index, variant ->
+            context.writer.writeLine(
+                "${context.symbolEmitter.mangle("${enumName}_${variant.name}", ns)}${if (index < statement.variants.size - 1) "," else ""}"
+            )
+        }
+        context.writer.dedent()
+        context.writer.writeLine("} ${context.symbolEmitter.mangle(enumName, ns)};")
+        context.writer.writeLine(
+            "__amber_type_t ${context.symbolEmitter.mangle("type_$enumName", ns)} = { \"$enumName\", ${100 + (ns ?: "").hashCode() + enumName.hashCode()}, $variantsVar, ${statement.variants.size}, $toStringFunc };"
+        )
+    }
+
+    private fun visitStructDeclaration(statement: StructDeclaration) {
+        val symbol = context.resolvedSymbols[statement.name]
+        val structType = symbol?.type as? Type.Struct
+        val ns = structType?.namespace
+        val structName = statement.name.name
+        val mangledName = context.symbolEmitter.mangleStruct(structName, ns)
+
+        context.writer.writeLine("typedef struct {")
+        context.writer.indent()
+        structType?.fields?.values?.forEach { field ->
+            context.writer.writeLine("${context.typeMapper.map(field.type)} ${field.name};")
+        }
+        context.writer.dedent()
+        context.writer.writeLine("} $mangledName;")
+
+        val boxName = "${mangledName}_box"
+        context.writer.writeLine("typedef struct {")
+        context.writer.indent()
+        context.writer.writeLine("__amber_header_t header;")
+        context.writer.writeLine("$mangledName value;")
+        context.writer.dedent()
+        context.writer.writeLine("} $boxName;")
+
+        val toStringFunc = context.symbolEmitter.mangle("${structName}_to_string", ns)
+        context.writer.writeLine("static char* $toStringFunc(void* val) {")
+        context.writer.indent()
+        context.writer.writeLine("$boxName* b = ($boxName*)val;")
+        context.writer.writeLine("char* res = \"$structName { \";")
+        structType?.fields?.values?.forEachIndexed { index, field ->
+            context.writer.write("res = __amber_rt_str_concat(res, \"${field.name}: \");")
+            val boxFunc = when (field.type) {
+                Type.Number -> "__amber_rt_box_double"
+                Type.Boolean -> "__amber_rt_box_bool"
+                Type.String -> "__amber_rt_box_string"
+                is Type.Enum -> "__amber_rt_box_enum"
+                is Type.Struct -> "__amber_rt_box_${context.symbolEmitter.mangleStruct(field.type.name, field.type.namespace)}"
+                else -> ""
+            }
+            if (boxFunc.isNotEmpty()) {
+                if (field.type is Type.Enum) {
+                    context.writer.write(
+                        "res = __amber_rt_str_concat(res, __amber_rt_to_string($boxFunc(b->value.${field.name}, &${context.symbolEmitter.mangle("type_${field.type.name}", field.type.moduleNamespace)})));"
+                    )
+                } else {
+                    context.writer.write("res = __amber_rt_str_concat(res, __amber_rt_to_string($boxFunc(b->value.${field.name})));")
+                }
+            } else {
+                context.writer.write("res = __amber_rt_str_concat(res, __amber_rt_to_string(b->value.${field.name}));")
+            }
+            if (index < structType.fields.size - 1) {
+                context.writer.write("res = __amber_rt_str_concat(res, \", \");")
+            }
+        }
+        context.writer.writeLine("res = __amber_rt_str_concat(res, \" }\");")
+        context.writer.writeLine("return res;")
+        context.writer.dedent()
+        context.writer.writeLine("}")
+
+        context.writer.writeLine("__amber_type_t ${context.symbolEmitter.mangle("type_$structName", ns)} = { \"$structName\", ${100 + (ns ?: "").hashCode() + structName.hashCode()}, NULL, 0, $toStringFunc };")
+
+        context.writer.writeLine("static inline void* __amber_rt_box_$mangledName($mangledName v) {")
+        context.writer.indent()
+        context.writer.writeLine("$boxName* p = ($boxName*)__amber_rt_alloc(sizeof($boxName));")
+        context.writer.writeLine("p->header.type = &${context.symbolEmitter.mangle("type_$structName", ns)};")
+        context.writer.writeLine("p->value = v;")
+        context.writer.writeLine("return p;")
+        context.writer.dedent()
+        context.writer.writeLine("}")
+
+        context.writer.writeLine("static inline $mangledName __amber_rt_unbox_$mangledName(void* p) {")
+        context.writer.indent()
+        context.writer.writeLine("if (!p) { $mangledName v = {0}; return v; }")
+        context.writer.writeLine("return (($boxName*)p)->value;")
+        context.writer.dedent()
+        context.writer.writeLine("}")
+    }
+
+    private fun visitBlockStatement(statement: BlockStatement) {
+        context.writer.writeLine("{")
+        context.writer.indent()
+        statement.statements.forEach { emit(it) }
+        context.writer.dedent()
+        context.writer.writeLine("}")
     }
 }

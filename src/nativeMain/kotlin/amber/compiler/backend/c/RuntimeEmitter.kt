@@ -126,6 +126,7 @@ class RuntimeEmitter(
         writer.writeLine()
         writer.writeLine("char* __amber_rt_to_string(void* val);")
         writer.writeLine("char* __amber_rt_str_concat(const char* s1, const char* s2);")
+        writer.writeLine("char* __amber_rt_from_num(double n);")
         writer.writeLine("void __amber_rt_panic(const char* msg);")
         writer.writeLine()
     }
