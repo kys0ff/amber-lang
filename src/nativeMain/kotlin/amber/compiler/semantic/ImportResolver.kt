@@ -41,7 +41,7 @@ class ImportResolver(
         return try {
             val fileContent = readFileContent(absolutePath)
             val lexer = Lexer(fileContent)
-            val parser = Parser(lexer.tokenize(), absolutePath)
+            val parser = Parser(lexer.tokenize(keepTrivia = true), absolutePath)
 
             val (program, errors) = parser.parseProgram()
 

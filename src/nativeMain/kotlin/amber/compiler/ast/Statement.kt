@@ -2,8 +2,10 @@ package amber.compiler.ast
 
 sealed class Statement(
     line: Int = -1,
-    column: Int = -1
-) : BaseAstNode(line, column)
+    column: Int = -1,
+    length: Int? = null,
+    docstring: String? = null
+) : BaseAstNode(line, column, length, docstring)
 
 class ImportStatement(
     val path: String,
@@ -11,7 +13,9 @@ class ImportStatement(
     val importedMember: String? = null,
     line: Int = -1,
     column: Int = -1,
-) : Statement(line, column) {
+    length: Int? = null,
+    docstring: String? = null
+) : Statement(line, column, length, docstring) {
     override val children: List<AstNode> get() = listOfNotNull(asName)
 }
 
@@ -23,7 +27,9 @@ class FunctionDeclaration(
     val isIntrinsic: Boolean = false,
     line: Int = -1,
     column: Int = -1,
-) : Statement(line, column) {
+    length: Int? = null,
+    docstring: String? = null
+) : Statement(line, column, length, docstring) {
     override val children: List<AstNode> get() = listOf(name) + parameters + listOfNotNull(body)
 }
 
@@ -32,7 +38,9 @@ class ExtensionDeclaration(
     val functions: List<FunctionDeclaration>,
     line: Int = -1,
     column: Int = -1,
-) : Statement(line, column) {
+    length: Int? = null,
+    docstring: String? = null
+) : Statement(line, column, length, docstring) {
     override val children: List<AstNode> get() = functions
 }
 
@@ -44,7 +52,9 @@ class VariableDeclaration(
     val isIntrinsic: Boolean = false,
     line: Int = -1,
     column: Int = -1,
-) : Statement(line, column) {
+    length: Int? = null,
+    docstring: String? = null
+) : Statement(line, column, length, docstring) {
     override val children: List<AstNode> get() = listOfNotNull(name, initializer)
 }
 
@@ -53,7 +63,9 @@ class EnumDeclaration(
     val variants: List<IdentifierExpression>,
     line: Int = -1,
     column: Int = -1,
-) : Statement(line, column) {
+    length: Int? = null,
+    docstring: String? = null
+) : Statement(line, column, length, docstring) {
     override val children: List<AstNode> get() = listOf(name) + variants
 }
 
@@ -63,7 +75,9 @@ class IfStatement(
     val elseBranch: BlockStatement?,
     line: Int = -1,
     column: Int = -1,
-) : Statement(line, column) {
+    length: Int? = null,
+    docstring: String? = null
+) : Statement(line, column, length, docstring) {
     override val children: List<AstNode> get() = listOfNotNull(condition, thenBranch, elseBranch)
 }
 
@@ -72,7 +86,9 @@ class WhileStatement(
     val body: BlockStatement,
     line: Int = -1,
     column: Int = -1,
-) : Statement(line, column) {
+    length: Int? = null,
+    docstring: String? = null
+) : Statement(line, column, length, docstring) {
     override val children: List<AstNode> get() = listOf(condition, body)
 }
 
@@ -85,37 +101,47 @@ class ForStatement(
     val body: BlockStatement,
     line: Int = -1,
     column: Int = -1,
-) : Statement(line, column) {
+    length: Int? = null,
+    docstring: String? = null
+) : Statement(line, column, length, docstring) {
     override val children: List<AstNode> get() = listOfNotNull(itemName, indexName, iterable, body)
 }
 
 class BreakStatement(
     line: Int = -1,
-    column: Int = -1
-) : Statement(line, column) {
+    column: Int = -1,
+    length: Int? = null,
+    docstring: String? = null
+) : Statement(line, column, length, docstring) {
     override val children: List<AstNode> get() = emptyList()
 }
 
 class ContinueStatement(
     line: Int = -1,
-    column: Int = -1
-) : Statement(line, column) {
+    column: Int = -1,
+    length: Int? = null,
+    docstring: String? = null
+) : Statement(line, column, length, docstring) {
     override val children: List<AstNode> get() = emptyList()
 }
 
 class ReturnStatement(
     val value: Expression?,
     line: Int = -1,
-    column: Int = -1
-) : Statement(line, column) {
+    column: Int = -1,
+    length: Int? = null,
+    docstring: String? = null
+) : Statement(line, column, length, docstring) {
     override val children: List<AstNode> get() = listOfNotNull(value)
 }
 
 class BlockStatement(
     val statements: List<Statement>,
     line: Int = -1,
-    column: Int = -1
-) : Statement(line, column) {
+    column: Int = -1,
+    length: Int? = null,
+    docstring: String? = null
+) : Statement(line, column, length, docstring) {
     override val children: List<AstNode> get() = statements
 }
 
@@ -125,7 +151,9 @@ class StructField(
     val defaultValue: Expression?,
     line: Int = -1,
     column: Int = -1,
-) : BaseAstNode(line, column) {
+    length: Int? = null,
+    docstring: String? = null
+) : BaseAstNode(line, column, length, docstring) {
     override val children: List<AstNode> get() = listOfNotNull(name, defaultValue)
 }
 
@@ -134,14 +162,18 @@ class StructDeclaration(
     val fields: List<StructField>,
     line: Int = -1,
     column: Int = -1,
-) : Statement(line, column) {
+    length: Int? = null,
+    docstring: String? = null
+) : Statement(line, column, length, docstring) {
     override val children: List<AstNode> get() = listOf(name) + fields
 }
 
 class ExpressionStatement(
     val expression: Expression,
     line: Int = -1,
-    column: Int = -1
-) : Statement(line, column) {
+    column: Int = -1,
+    length: Int? = null,
+    docstring: String? = null
+) : Statement(line, column, length, docstring) {
     override val children: List<AstNode> get() = listOf(expression)
 }

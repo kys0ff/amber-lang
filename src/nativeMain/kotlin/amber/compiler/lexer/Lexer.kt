@@ -99,7 +99,7 @@ class Lexer(private val source: String) {
         }
 
         when (actualChar) {
-            '(', ')', '{', '}', '[', ']', ',', ';', ':' -> {
+            '(', ')', '{', '}', '[', ']', ',', ';', ':', '.' -> {
                 state.position++
                 state.column++
                 return Token.Separator(actualChar.toString(), startLine, startColumn)
@@ -154,11 +154,13 @@ class Lexer(private val source: String) {
             state.column++
         }
         if (state.position < source.length && source[state.position] == '.') {
-            state.position++
-            state.column++
-            while (state.position < source.length && source[state.position].isDigit()) {
+            if (state.position + 1 < source.length && source[state.position + 1].isDigit()) {
                 state.position++
                 state.column++
+                while (state.position < source.length && source[state.position].isDigit()) {
+                    state.position++
+                    state.column++
+                }
             }
         }
         return Token.NumberLiteral(source.substring(start, state.position), startLine, startColumn)

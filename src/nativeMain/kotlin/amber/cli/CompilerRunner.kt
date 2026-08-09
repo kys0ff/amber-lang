@@ -19,6 +19,7 @@ import amber.util.fileExists
 import amber.util.isDirectory
 import amber.util.joinPaths
 import amber.util.readFile
+import amber.util.listFiles
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.posix.fclose
 import platform.posix.fopen
@@ -50,6 +51,10 @@ class CompilerRunner(private val config: CompilerConfig) {
     fun run(scriptArgs: List<String>) {
         if (config.command == CompilerCommand.FORMAT) {
             handleFormat()
+            return
+        }
+        if (config.command == CompilerCommand.DOC) {
+            handleDoc()
             return
         }
 
@@ -224,6 +229,72 @@ class CompilerRunner(private val config: CompilerConfig) {
                     logger.error("Failed to format $target")
                     exitProcess(1)
                 }
+            }
+        }
+    }
+
+    private fun handleDoc() {
+        if (config.readDocQuery != null) {
+            handleReadDoc(config.readDocQuery)
+            return
+        }
+
+        val docGenerator = amber.compiler.doc.DocGenerator()
+        val target = config.entryFile
+        
+        if (isDirectory(target)) {
+            logger.info("Generating documentation for project at $target...")
+            val files = mutableListOf<String>()
+            findAmbFiles(target, files)
+            files.forEach { file ->
+                val md = docGenerator.generate(file)
+                val outPath = file.removeSuffix(".amb") + ".md"
+                writeTextFile(outPath, md)
+                logger.info("Generated $outPath")
+            }
+        } else {
+            logger.info("Generating documentation for $target...")
+            val md = docGenerator.generate(target)
+            val outPath = target.removeSuffix(".amb") + ".md"
+            writeTextFile(outPath, md)
+            logger.info("Generated $outPath")
+        }
+    }
+
+    private fun handleReadDoc(query: String) {
+        val projectLoader = ProjectLoader()
+        val projectRoot = when (val res = projectLoader.load(config.entryFile)) {
+            is ProjectFileResult.Success -> res.projectRoot
+            is ProjectFileResult.Failure -> "."
+        }
+        val projectConfig = when (val res = projectLoader.load(config.entryFile)) {
+            is ProjectFileResult.Success -> res.config
+            is ProjectFileResult.Failure -> null
+        }
+
+        val runtimeRoot = if (fileExists(joinPaths(config.executableDir, "runtime"))) 
+            joinPaths(config.executableDir, "runtime") 
+        else "/home/kys0adam/IdeaProjects/amber-lang/runtime"
+        
+        val stdlibPath = joinPaths(amber.util.getPathParent(runtimeRoot) ?: "..", "lib/std")
+
+        val reader = amber.compiler.doc.DocReader(
+            projectConfig = projectConfig,
+            projectRoot = projectRoot,
+            stdlibPath = stdlibPath,
+            useColor = config.useColor
+        )
+        reader.read(query)
+    }
+
+    private fun findAmbFiles(dir: String, result: MutableList<String>) {
+        val entries = listFiles(dir)
+        for (name in entries) {
+            val path = joinPaths(dir, name)
+            if (isDirectory(path)) {
+                findAmbFiles(path, result)
+            } else if (name.endsWith(".amb")) {
+                result.add(path)
             }
         }
     }

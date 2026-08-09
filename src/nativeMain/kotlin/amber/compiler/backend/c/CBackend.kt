@@ -73,7 +73,7 @@ class CBackend(
         usedIntrinsicNames.add("std.runtime.panic")
         usedIntrinsicNames.add("std.str.from_num")
         usedIntrinsicNames.add("std.str.str_concat")
-        usedIntrinsicNames.add("to_string")
+        usedIntrinsicNames.add("std.runtime.to_string")
 
         runtimeEmitter.emitHeaders()
         runtimeEmitter.emitTypedefs()

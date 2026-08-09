@@ -13,7 +13,7 @@ enum class GCType {
 }
 
 enum class CompilerCommand {
-    BUILD, FORMAT
+    BUILD, FORMAT, DOC
 }
 
 /**
@@ -35,6 +35,7 @@ data class CompilerConfig(
     val quiet: Boolean = false,
     val checkOnly: Boolean = false,
     val runAfterBuild: Boolean = true,
+    val readDocQuery: String? = null,
     val executableDir: String = "."
 )
 
@@ -54,6 +55,7 @@ class CompilerConfigBuilder {
     var quiet: Boolean = false
     var checkOnly: Boolean = false
     var runAfterBuild: Boolean = true
+    var readDocQuery: String? = null
     var executableDir: String = "."
 
     fun build() = CompilerConfig(
@@ -72,6 +74,7 @@ class CompilerConfigBuilder {
         quiet = quiet,
         checkOnly = checkOnly,
         runAfterBuild = runAfterBuild,
+        readDocQuery = readDocQuery,
         executableDir = executableDir
     )
 }

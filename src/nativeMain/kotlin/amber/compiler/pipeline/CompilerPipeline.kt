@@ -40,7 +40,7 @@ class CompilerPipeline(val config: CompilerConfig) {
         // 1. Lexing & Parsing
         logger.debug("  → lexing & parsing")
         val lexer = Lexer(source)
-        val tokens = lexer.tokenize()
+        val tokens = lexer.tokenize(keepTrivia = true)
         val parser = Parser(tokens, filePath)
         val (program, parseErrors) = parser.parseProgram()
         

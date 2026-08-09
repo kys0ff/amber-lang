@@ -27,7 +27,10 @@ class ExpressionEmitter(private val context: CGenerationContext) {
     fun emit(expression: Expression, expectedType: Type? = null) {
         val actualType = context.expressionTypes[expression]
         
-        val boxFunc = if (expectedType == Type.Any && actualType != Type.Any && actualType != null) {
+        val needsAnyBoxing = expectedType == Type.Any && actualType != Type.Any && actualType != null
+        val needsUnsafeWrapping = expectedType is Type.Unsafe && actualType !is Type.Unsafe && actualType != Type.Nothing && actualType != Type.Error && actualType != null
+        
+        val boxFunc = if (needsAnyBoxing || needsUnsafeWrapping) {
             when (actualType) {
                 Type.Number -> "__amber_rt_box_double"
                 Type.Boolean -> "__amber_rt_box_bool"
@@ -38,6 +41,10 @@ class ExpressionEmitter(private val context: CGenerationContext) {
                 else -> ""
             }
         } else ""
+
+        if (needsUnsafeWrapping) {
+            context.writer.write("__amber_rt_result_success(")
+        }
 
         if (boxFunc.isNotEmpty()) {
             context.writer.write(boxFunc)
@@ -50,6 +57,10 @@ class ExpressionEmitter(private val context: CGenerationContext) {
             if (actualType is Type.Enum) {
                 context.writer.write(", &${context.symbolEmitter.mangle("type_${actualType.name}", actualType.moduleNamespace)}")
             }
+            context.writer.write(")")
+        }
+
+        if (needsUnsafeWrapping) {
             context.writer.write(")")
         }
     }
@@ -379,6 +390,12 @@ class ExpressionEmitter(private val context: CGenerationContext) {
         context.writer.write("$finalResVar = ")
         if (innerType == Type.Number) {
             context.writer.write("__amber_rt_unbox_double(__amber_rt_unwrap($resVar))")
+        } else if (innerType == Type.Boolean) {
+            context.writer.write("__amber_rt_unbox_bool(__amber_rt_unwrap($resVar))")
+        } else if (innerType == Type.Char) {
+            context.writer.write("__amber_rt_unbox_char(__amber_rt_unwrap($resVar))")
+        } else if (innerType == Type.String) {
+            context.writer.write("__amber_rt_unbox_string(__amber_rt_unwrap($resVar))")
         } else {
             context.writer.write("(${cInnerType})__amber_rt_unwrap($resVar)")
         }

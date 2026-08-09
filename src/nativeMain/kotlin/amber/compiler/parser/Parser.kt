@@ -43,9 +43,49 @@ private class ParserRecoveryException : RuntimeException()
 class Parser(private val tokens: List<Token>, private val filePath: String) {
     private val state = ParserState()
     val errors = mutableListOf<SyntaxError>()
+    
+    private var lastDocstring: String? = null
+    private var docBuffer: StringBuilder? = null
+    private var lastTrivialIndex = -1
 
-    private fun peek(): Token =
-        tokens.getOrElse(state.currentIndex) { Token.EOF() }.let(::normalizeToken)
+    private fun peek(): Token {
+        var token = tokens.getOrElse(state.currentIndex) { Token.EOF() }
+        
+        while (token is Token.Whitespace || token is Token.Comment) {
+            if (state.currentIndex > lastTrivialIndex) {
+                if (token is Token.Comment) {
+                    val value = token.value.trim()
+                    if (value.startsWith("##")) {
+                        if (docBuffer == null) docBuffer = StringBuilder()
+                        val content = value.removePrefix("##").trim()
+                        if (content.isNotEmpty()) docBuffer?.append(content)?.append("\n")
+                    } else if (value.startsWith("#") && docBuffer != null) {
+                        val content = value.removePrefix("#").trim()
+                        docBuffer?.append(content)?.append("\n")
+                    } else {
+                        docBuffer = null
+                    }
+                }
+                lastTrivialIndex = state.currentIndex
+            }
+            state.currentIndex++
+            token = tokens.getOrElse(state.currentIndex) { Token.EOF() }
+        }
+        
+        val doc = docBuffer?.toString()?.trim()
+        if (doc != null && token !is Token.Newline) {
+            lastDocstring = doc
+            docBuffer = null
+        }
+        
+        return normalizeToken(token)
+    }
+
+    private fun consumeDocstring(): String? {
+        val doc = lastDocstring
+        lastDocstring = null
+        return doc
+    }
 
     private fun consume(): Token {
         val token = peek()
@@ -123,6 +163,7 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
     }
 
     fun parseProgram(): Pair<Program, List<SyntaxError>> {
+        val doc = consumeDocstring()
         val statements = mutableListOf<Statement>()
         val startLine = peek().line
         val startColumn = peek().column
@@ -136,10 +177,11 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
             }
             skipNewlines()
         }
-        return Pair(Program(statements, startLine, startColumn), errors)
+        return Pair(Program(statements, startLine, startColumn, docstring = doc), errors)
     }
 
     private fun parseStatement(): Statement {
+        val doc = consumeDocstring()
         val statement = when (val token = peek()) {
             is Token.Keyword -> {
                 when (token.value) {
@@ -148,8 +190,8 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
                         val next = peek()
                         if (next is Token.Keyword) {
                             when (next.value) {
-                                "func" -> parseFunctionDeclaration(isIntrinsic = true)
-                                "val", "var" -> parseVariableDeclaration(isIntrinsic = true)
+                                "func" -> parseFunctionDeclaration(isIntrinsic = true, docstring = doc)
+                                "val", "var" -> parseVariableDeclaration(isIntrinsic = true, docstring = doc)
                                 else -> {
                                     reportError("expected 'func', 'val', or 'var' after 'intrinsic' but got '${next.value}'")
                                     throw ParserRecoveryException()
@@ -161,50 +203,50 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
                         }
                     }
 
-                    "func" -> parseFunctionDeclaration()
-                    "enum" -> parseEnumDeclaration()
-                    "struct" -> parseStructDeclaration()
-                    "val", "var" -> parseVariableDeclaration()
-                    "if" -> parseIfStatement()
-                    "while" -> parseWhileStatement()
-                    "for" -> parseForStatement()
+                    "func" -> parseFunctionDeclaration(docstring = doc)
+                    "enum" -> parseEnumDeclaration(docstring = doc)
+                    "struct" -> parseStructDeclaration(docstring = doc)
+                    "val", "var" -> parseVariableDeclaration(docstring = doc)
+                    "if" -> parseIfStatement(docstring = doc)
+                    "while" -> parseWhileStatement(docstring = doc)
+                    "for" -> parseForStatement(docstring = doc)
                     "break" -> {
                         val t = consume()
-                        BreakStatement(t.line, t.column)
+                        BreakStatement(t.line, t.column, docstring = doc)
                     }
 
                     "continue" -> {
                         val t = consume()
-                        ContinueStatement(t.line, t.column)
+                        ContinueStatement(t.line, t.column, docstring = doc)
                     }
 
-                    "return" -> parseReturnStatement()
-                    "use" -> parseImportStatement()
-                    "extend" -> parseExtensionDeclaration()
-                    else -> parseExpressionStatement()
+                    "return" -> parseReturnStatement(docstring = doc)
+                    "use" -> parseImportStatement(docstring = doc)
+                    "extend" -> parseExtensionDeclaration(docstring = doc)
+                    else -> parseExpressionStatement(docstring = doc)
                 }
             }
 
             is Token.Separator -> {
                 when (token.value) {
-                    "{" -> parseBlockStatement()
+                    "{" -> parseBlockStatement(docstring = doc)
                     "}" -> {
                         reportError("unexpected closing brace '}'")
                         consume()
                         throw ParserRecoveryException()
                     }
 
-                    else -> parseExpressionStatement()
+                    else -> parseExpressionStatement(docstring = doc)
                 }
             }
 
-            else -> parseExpressionStatement()
+            else -> parseExpressionStatement(docstring = doc)
         }
         skipNewlines()
         return statement
     }
 
-    private fun parseImportStatement(): ImportStatement {
+    private fun parseImportStatement(docstring: String? = null): ImportStatement {
         val useKeyword = consume()
         val pathToken = peek()
         if (pathToken !is Token.StringLiteral) {
@@ -229,10 +271,10 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
             val aliasToken = expectIdentifier()
             asName = IdentifierExpression(aliasToken.value, aliasToken.line, aliasToken.column)
         }
-        return ImportStatement(path, asName, importedMember, useKeyword.line, useKeyword.column)
+        return ImportStatement(path, asName, importedMember, useKeyword.line, useKeyword.column, docstring = docstring)
     }
 
-    private fun parseExtensionDeclaration(): ExtensionDeclaration {
+    private fun parseExtensionDeclaration(docstring: String? = null): ExtensionDeclaration {
         val extendKeyword = consume()
         val targetType = parseType()
         expectToken("{")
@@ -241,17 +283,18 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
         while (peek().value() != "}") {
             if (peek() is Token.EOF) {
                 reportError("unclosed extension block, expected '}'")
-                return ExtensionDeclaration(targetType, functions, extendKeyword.line, extendKeyword.column)
+                return ExtensionDeclaration(targetType, functions, extendKeyword.line, extendKeyword.column, docstring = docstring)
             }
             try {
                 var isIntrinsic = false
+                val innerDoc = consumeDocstring()
                 if (peek().value() == "intrinsic") {
                     consume()
                     isIntrinsic = true
                 }
                 
                 if (peek().value() == "func") {
-                    functions.add(parseFunctionDeclaration(isIntrinsic))
+                    functions.add(parseFunctionDeclaration(isIntrinsic, docstring = innerDoc))
                 } else {
                     reportError("only functions are allowed in extension blocks")
                     consume()
@@ -262,10 +305,10 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
             skipNewlines()
         }
         expectToken("}")
-        return ExtensionDeclaration(targetType, functions, extendKeyword.line, extendKeyword.column)
+        return ExtensionDeclaration(targetType, functions, extendKeyword.line, extendKeyword.column, docstring = docstring)
     }
 
-    private fun parseBlockStatement(): BlockStatement {
+    private fun parseBlockStatement(docstring: String? = null): BlockStatement {
         skipNewlines()
         val openBrace = expectToken("{")
         val statements = mutableListOf<Statement>()
@@ -274,7 +317,7 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
         while (peek().value() != "}") {
             if (peek() is Token.EOF) {
                 reportError("unclosed block statement, expected '}'")
-                return BlockStatement(statements, openBrace.line, openBrace.column)
+                return BlockStatement(statements, openBrace.line, openBrace.column, docstring = docstring)
             }
             try {
                 statements.add(parseStatement())
@@ -284,10 +327,10 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
             skipNewlines()
         }
         expectToken("}")
-        return BlockStatement(statements, openBrace.line, openBrace.column)
+        return BlockStatement(statements, openBrace.line, openBrace.column, docstring = docstring)
     }
 
-    private fun parseFunctionDeclaration(isIntrinsic: Boolean = false): FunctionDeclaration {
+    private fun parseFunctionDeclaration(isIntrinsic: Boolean = false, docstring: String? = null): FunctionDeclaration {
         val funcKeyword = consume()
         val name = parseIdentifierExpression()
         skipNewlines()
@@ -324,11 +367,12 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
             body,
             isIntrinsic,
             funcKeyword.line,
-            funcKeyword.column
+            funcKeyword.column,
+            docstring = docstring
         )
     }
 
-    private fun parseEnumDeclaration(): EnumDeclaration {
+    private fun parseEnumDeclaration(docstring: String? = null): EnumDeclaration {
         val startToken = expectToken("enum")
         val name = parseIdentifierExpression()
         expectToken("{")
@@ -343,10 +387,10 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
             }
         }
         expectToken("}")
-        return EnumDeclaration(name, variants, startToken.line, startToken.column)
+        return EnumDeclaration(name, variants, startToken.line, startToken.column, docstring = docstring)
     }
 
-    private fun parseStructDeclaration(): StructDeclaration {
+    private fun parseStructDeclaration(docstring: String? = null): StructDeclaration {
         val startToken = expectToken("struct")
         val name = parseIdentifierExpression()
         expectToken("{")
@@ -361,10 +405,11 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
             }
         }
         expectToken("}")
-        return StructDeclaration(name, fields, startToken.line, startToken.column)
+        return StructDeclaration(name, fields, startToken.line, startToken.column, docstring = docstring)
     }
 
     private fun parseStructField(): StructField {
+        val doc = consumeDocstring()
         val name = parseIdentifierExpression()
         val typeAnnotation = parseOptionalTypeAnnotation()
         var defaultValue: Expression? = null
@@ -374,10 +419,11 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
             skipNewlines()
             defaultValue = parseExpression()
         }
-        return StructField(name, typeAnnotation, defaultValue, name.line, name.column)
+        return StructField(name, typeAnnotation, defaultValue, name.line, name.column, docstring = doc)
     }
 
     private fun parseParameter(): Parameter {
+        val doc = consumeDocstring()
         val name = parseIdentifierExpression()
         val typeAnnotation = parseOptionalTypeAnnotation()
         var defaultValue: Expression? = null
@@ -387,10 +433,10 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
             skipNewlines()
             defaultValue = parseExpression()
         }
-        return Parameter(name, typeAnnotation, defaultValue, name.line, name.column)
+        return Parameter(name, typeAnnotation, defaultValue, name.line, name.column, docstring = doc)
     }
 
-    private fun parseVariableDeclaration(isIntrinsic: Boolean = false): VariableDeclaration {
+    private fun parseVariableDeclaration(isIntrinsic: Boolean = false, docstring: String? = null): VariableDeclaration {
         val keywordToken = consume()
         val isMutable = keywordToken.value() == "var"
         val name = parseIdentifierExpression()
@@ -409,11 +455,12 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
             isMutable,
             isIntrinsic,
             keywordToken.line,
-            keywordToken.column
+            keywordToken.column,
+            docstring = docstring
         )
     }
 
-    private fun parseIfStatement(): IfStatement {
+    private fun parseIfStatement(docstring: String? = null): IfStatement {
         val ifKeyword = consume()
         skipNewlines()
         expectToken("(")
@@ -428,10 +475,10 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
             consume()
             elseBranch = parseBlockStatement()
         }
-        return IfStatement(condition, thenBranch, elseBranch, ifKeyword.line, ifKeyword.column)
+        return IfStatement(condition, thenBranch, elseBranch, ifKeyword.line, ifKeyword.column, docstring = docstring)
     }
 
-    private fun parseWhileStatement(): WhileStatement {
+    private fun parseWhileStatement(docstring: String? = null): WhileStatement {
         val whileKeyword = consume()
         skipNewlines()
         expectToken("(")
@@ -440,10 +487,10 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
         skipNewlines()
         expectToken(")")
         val body = parseBlockStatement()
-        return WhileStatement(condition, body, whileKeyword.line, whileKeyword.column)
+        return WhileStatement(condition, body, whileKeyword.line, whileKeyword.column, docstring = docstring)
     }
 
-    private fun parseForStatement(): ForStatement {
+    private fun parseForStatement(docstring: String? = null): ForStatement {
         val forKeyword = consume()
         skipNewlines()
         expectToken("(")
@@ -489,7 +536,8 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
                 iterable = iterable,
                 body = body,
                 line = forKeyword.line,
-                column = forKeyword.column
+                column = forKeyword.column,
+                docstring = docstring
             )
         } else {
             // for (item in iterable)
@@ -501,22 +549,23 @@ class Parser(private val tokens: List<Token>, private val filePath: String) {
                 iterable = iterable,
                 body = body,
                 line = forKeyword.line,
-                column = forKeyword.column
+                column = forKeyword.column,
+                docstring = docstring
             )
         }
     }
 
-    private fun parseReturnStatement(): ReturnStatement {
+    private fun parseReturnStatement(docstring: String? = null): ReturnStatement {
         val returnKeyword = consume()
         val value = if (peek() !is Token.EOF && peek() !is Token.Newline && peek().value() != "}") {
             parseExpression()
         } else null
-        return ReturnStatement(value, returnKeyword.line, returnKeyword.column)
+        return ReturnStatement(value, returnKeyword.line, returnKeyword.column, docstring = docstring)
     }
 
-    private fun parseExpressionStatement(): ExpressionStatement {
+    private fun parseExpressionStatement(docstring: String? = null): ExpressionStatement {
         val expr = parseExpression()
-        return ExpressionStatement(expr, expr.line, expr.column)
+        return ExpressionStatement(expr, expr.line, expr.column, docstring = docstring)
     }
 
     internal fun parseExpression(): Expression = parseAssignmentExpression()

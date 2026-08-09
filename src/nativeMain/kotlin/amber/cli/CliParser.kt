@@ -31,6 +31,9 @@ class CliParser {
         if (args.getOrNull(0) == "fmt") {
             return parseFmt(args.drop(1))
         }
+        if (args.getOrNull(0) == "doc") {
+            return parseDoc(args.drop(1))
+        }
 
         val dashDashIndex = args.indexOf("--")
         val compilerArgs = if (dashDashIndex != -1) args.slice(0 until dashDashIndex) else args.toList()
@@ -130,6 +133,54 @@ class CliParser {
         }
     }
 
+    private fun parseDoc(args: List<String>): CompilerConfig {
+        var target: String? = null
+        var readQuery: String? = null
+        val flags = mutableSetOf<String>()
+
+        var i = 0
+        while (i < args.size) {
+            val arg = args[i]
+            when {
+                arg == "--read" || arg == "-r" -> {
+                    val query = mutableListOf<String>()
+                    var j = i + 1
+                    while (j < args.size && !args[j].startsWith("-")) {
+                        query.add(args[j])
+                        j++
+                    }
+                    if (query.isEmpty()) {
+                        printError("'$arg' requires a symbol name")
+                        exitProcess(1)
+                    }
+                    readQuery = query.joinToString(" ")
+                    i = j - 1
+                }
+                arg.startsWith("-") -> {
+                    flags += arg
+                }
+                else -> {
+                    if (target == null) target = arg
+                }
+            }
+            i++
+        }
+
+        if ("--help" in flags || "-h" in flags) {
+            printHelp()
+            exitProcess(0)
+        }
+
+        val absoluteTarget = normalizePath(target ?: ".")
+
+        return compilerConfig {
+            command = CompilerCommand.DOC
+            entryFile = absoluteTarget
+            useColor = "--no-color" !in flags
+            readDocQuery = readQuery
+        }
+    }
+
     private fun printError(message: String) {
         println(Ansi.red(Ansi.bold("error:")) + " $message")
     }
@@ -142,6 +193,7 @@ class CliParser {
     
             ${Ansi.bold("Commands")}
               fmt [path]          Format Amber source files
+              doc [path]          Generate documentation for Amber source files
     
             ${Ansi.bold("path")}
               Path to a .amb script, or a directory containing a 'project' file.
@@ -174,6 +226,27 @@ class CliParser {
 
               amber fmt project
                   Format the project defined by the 'project' file.
+
+            ${Ansi.bold("Documentation")}
+              amber doc
+                  Generate documentation for the current project.
+          
+              amber doc <file>
+                  Generate documentation for a single Amber source file.
+          
+              amber doc <directory>
+                  Recursively generate documentation for an Amber project.
+
+              amber doc -r, --read <query>
+                  Look up and read documentation for a symbol in the terminal.
+                  Query can be:
+                    - symbol            (e.g., 'print')
+                    - module:symbol     (e.g., 'core:str')
+                    - module:symbol.member (e.g., 'core:str.len')
+                    - module:symbol member (e.g., 'core:str len')
+                  Prefixes:
+                    - core:, std:       (Standard Library)
+                    - local:, pkg:      (Current Project)
             """.trimIndent()
         )
     }

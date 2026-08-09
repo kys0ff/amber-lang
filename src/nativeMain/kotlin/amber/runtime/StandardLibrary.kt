@@ -113,9 +113,6 @@ object StandardLibrary {
                     """.trimIndent()
                 )
                 func(
-                    "to_string", listOf(Type.Any), Type.String, "to_string"
-                )
-                func(
                     "from_num", listOf(Type.Number), Type.String, "from_num",
                     cImpl = """
                         char* __amber_rt_from_num(double n) {
@@ -157,12 +154,6 @@ object StandardLibrary {
                     cImpl = "double __amber_rt_math_floor(double n) { return floor(n); }")
                 func("ceil", listOf(Type.Number), Type.Number, "math_ceil",
                     cImpl = "double __amber_rt_math_ceil(double n) { return ceil(n); }")
-                func("max", listOf(Type.Number, Type.Number), Type.Number, "math_max",
-                    cImpl = "double __amber_rt_math_max(double a, double b) { return a > b ? a : b; }")
-                func("min", listOf(Type.Number, Type.Number), Type.Number, "math_min",
-                    cImpl = "double __amber_rt_math_min(double a, double b) { return a < b ? a : b; }")
-                func("clamp", listOf(Type.Number, Type.Number, Type.Number), Type.Number, "math_clamp",
-                    cImpl = "double __amber_rt_math_clamp(double n, double min, double max) { if (n < min) return min; if (n > max) return max; return n; }")
             }
 
             // Char Module
@@ -177,13 +168,80 @@ object StandardLibrary {
             module("std.runtime") {
                 func("exit", listOf(Type.Number), Type.Unit, "exit",
                     cImpl = "void __amber_rt_exit(double code) { exit((int)code); }")
-                func("panic", listOf(Type.String), Type.Unit, "panic",
+                func("fatal", listOf(Type.String), Type.Unit, "panic",
                     cImpl = """
                         void __amber_rt_panic(const char* msg) {
                             fprintf(stderr, "panic: %s\n", msg);
                             exit(1);
                         }
                     """.trimIndent())
+                
+                func(
+                    "to_string", listOf(Type.Any), Type.String, "to_string",
+                    cImpl = """
+                        char* __amber_rt_double_to_string(void* val) {
+                            return __amber_rt_from_num(__amber_rt_unbox_double(val));
+                        }
+                        char* __amber_rt_bool_to_string(void* val) {
+                            return __amber_rt_unbox_bool(val) ? "true" : "false";
+                        }
+                        char* __amber_rt_char_to_string_direct(char c) {
+                            char* buf = (char*)__amber_rt_alloc(2);
+                            buf[0] = c;
+                            buf[1] = '\0';
+                            return buf;
+                        }
+                        char* __amber_rt_char_to_string(void* val) {
+                            return __amber_rt_char_to_string_direct(__amber_rt_unbox_char(val));
+                        }
+                        char* __amber_rt_string_to_string(void* val) {
+                            return __amber_rt_unbox_string(val);
+                        }
+                        char* __amber_rt_list_to_string(void* val) {
+                            __amber_list_t* l = (__amber_list_t*)val;
+                            if (!l) return "null";
+                            if (l->length == 0) return "[]";
+                            
+                            size_t total_len = 2; // "[" and "]"
+                            char** strings = (char**)__amber_rt_alloc(sizeof(char*) * l->length);
+                            for (int i = 0; i < l->length; i++) {
+                                strings[i] = __amber_rt_to_string(l->data[i]);
+                                total_len += strlen(strings[i]);
+                                if (i < l->length - 1) total_len += 2; // ", "
+                            }
+                            
+                            char* res = (char*)__amber_rt_alloc(total_len + 1);
+                            char* p = res;
+                            *p++ = '[';
+                            for (int i = 0; i < l->length; i++) {
+                                size_t slen = strlen(strings[i]);
+                                memcpy(p, strings[i], slen);
+                                p += slen;
+                                if (i < l->length - 1) {
+                                    *p++ = ',';
+                                    *p++ = ' ';
+                                }
+                            }
+                            *p++ = ']';
+                            *p = '\0';
+                            return res;
+                        }
+    
+                        char* __amber_rt_to_string(void* val) {
+                            if (!val) return "null";
+                            __amber_header_t* h = (__amber_header_t*)val;
+                            if (h->type == &__amber_type_double) return __amber_rt_double_to_string(val);
+                            if (h->type == &__amber_type_string) return __amber_rt_string_to_string(val);
+                            if (h->type == &__amber_type_bool) return __amber_rt_bool_to_string(val);
+                            if (h->type == &__amber_type_char) return __amber_rt_char_to_string(val);
+                            if (h->type == &__amber_type_list) return __amber_rt_list_to_string(val);
+                            if (h->type && h->type->to_string) {
+                                return h->type->to_string(val);
+                            }
+                            return "???";
+                        }
+                    """.trimIndent()
+                )
             }
 
             // List Module
@@ -245,68 +303,6 @@ object StandardLibrary {
                         }
                     """.trimIndent())
             }
-
-            // Core Internal Helpers
-            func(
-                "to_string", listOf(Type.Any), Type.String, "to_string",
-                cImpl = """
-                    char* __amber_rt_double_to_string(void* val) {
-                        return __amber_rt_from_num(__amber_rt_unbox_double(val));
-                    }
-                    char* __amber_rt_bool_to_string(void* val) {
-                        return __amber_rt_unbox_bool(val) ? "true" : "false";
-                    }
-                    char* __amber_rt_char_to_string_direct(char c) {
-                        char* buf = (char*)__amber_rt_alloc(2);
-                        buf[0] = c;
-                        buf[1] = '\0';
-                        return buf;
-                    }
-                    char* __amber_rt_char_to_string(void* val) {
-                        return __amber_rt_char_to_string_direct(__amber_rt_unbox_char(val));
-                    }
-                    char* __amber_rt_string_to_string(void* val) {
-                        return __amber_rt_unbox_string(val);
-                    }
-                    char* __amber_rt_list_to_string(void* val) {
-                        __amber_list_t* l = (__amber_list_t*)val;
-                        if (l->length == 0) return "[]";
-                        
-                        size_t total_len = 2; // "[" and "]"
-                        char** strings = (char**)__amber_rt_alloc(sizeof(char*) * l->length);
-                        for (int i = 0; i < l->length; i++) {
-                            strings[i] = __amber_rt_to_string(l->data[i]);
-                            total_len += strlen(strings[i]);
-                            if (i < l->length - 1) total_len += 2; // ", "
-                        }
-                        
-                        char* res = (char*)__amber_rt_alloc(total_len + 1);
-                        char* p = res;
-                        *p++ = '[';
-                        for (int i = 0; i < l->length; i++) {
-                            size_t slen = strlen(strings[i]);
-                            memcpy(p, strings[i], slen);
-                            p += slen;
-                            if (i < l->length - 1) {
-                                *p++ = ',';
-                                *p++ = ' ';
-                            }
-                        }
-                        *p++ = ']';
-                        *p = '\0';
-                        return res;
-                    }
-
-                    char* __amber_rt_to_string(void* val) {
-                        if (!val) return "null";
-                        __amber_header_t* h = (__amber_header_t*)val;
-                        if (h->type && h->type->to_string) {
-                            return h->type->to_string(val);
-                        }
-                        return (char*)val;
-                    }
-                """.trimIndent()
-            )
 
             func(
                 "str_concat", listOf(Type.String, Type.String), Type.String, "str_concat",

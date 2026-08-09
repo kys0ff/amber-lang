@@ -1190,25 +1190,50 @@ class TypeChecker(
     }
 
     private fun ensurePrimitiveExtensionsLoaded(type: Type) {
+        // Always ensure runtime extensions are loaded
+        if (Type.Any !in loadedPrimitiveExtensions) {
+            loadedPrimitiveExtensions.add(Type.Any)
+            val runtimeImport = ImportStatement("core:runtime", null, "*")
+            val wasQuiet = isQuietMode
+            isQuietMode = true
+            try {
+                if (!(currentFilePath.endsWith("runtime.amb") || currentFilePath.contains("core:runtime"))) {
+                    visitImportStatement(runtimeImport)
+                }
+            } catch (_: Exception) {} finally {
+                isQuietMode = wasQuiet
+            }
+        }
+
         val canonicalType = when (type) {
             is Type.String -> Type.String
             is Type.Number -> Type.Number
             is Type.List, is Type.ArrayList -> Type.List(Type.Any)
             is Type.Char -> Type.Char
             is Type.Boolean -> Type.Boolean
+            is Type.Any -> Type.Any
             else -> null
         } ?: return
 
         if (canonicalType in loadedPrimitiveExtensions) return
-        loadedPrimitiveExtensions.add(canonicalType)
 
         val modulePath = when (canonicalType) {
             is Type.String -> "core:str"
             is Type.List -> "core:list"
             is Type.Number -> "core:math"
             is Type.Char -> "core:char"
+            is Type.Any -> "core:runtime"
             else -> null
         } ?: return
+        
+        // Prevent infinite recursion when checking stdlib files
+        if (modulePath == "core:str" && (currentFilePath.endsWith("str.amb") || currentFilePath.contains("core:str"))) return
+        if (modulePath == "core:list" && (currentFilePath.endsWith("list.amb") || currentFilePath.contains("core:list"))) return
+        if (modulePath == "core:math" && (currentFilePath.endsWith("math.amb") || currentFilePath.contains("core:math"))) return
+        if (modulePath == "core:char" && (currentFilePath.endsWith("char.amb") || currentFilePath.contains("core:char"))) return
+        if (modulePath == "core:runtime" && (currentFilePath.endsWith("runtime.amb") || currentFilePath.contains("core:runtime"))) return
+
+        loadedPrimitiveExtensions.add(canonicalType)
 
         val importStmt = ImportStatement(modulePath, null, "*")
         val wasQuiet = isQuietMode
@@ -1786,6 +1811,11 @@ class TypeChecker(
                 errors.addAll(importedErrors)
             }
 
+            // Always transfer extensions from imported modules
+            importedTypeChecker.extensionRegistry.forEach { (type, symbols) ->
+                extensionRegistry.getOrPut(type) { mutableListOf() }.addAll(symbols)
+            }
+
             val importedMember = importStmt.importedMember
             if (importedMember == null) {
                 val symbolsToImport = importedTypeChecker.currentScope.getTopLevelSymbols()
@@ -1810,16 +1840,11 @@ class TypeChecker(
                     importedModuleTypeCheckers[importStmt.path] = importedTypeChecker
                 }
             } else {
-                if (importedMember == "*") {
-                    importedTypeChecker.extensionRegistry.forEach { (type, symbols) ->
-                        extensionRegistry.getOrPut(type) { mutableListOf() }.addAll(symbols)
-                    }
-                } else {
+                if (importedMember != "*") {
                     var found = false
-                    importedTypeChecker.extensionRegistry.forEach { (type, symbols) ->
+                    importedTypeChecker.extensionRegistry.forEach { (_, symbols) ->
                         val matches = symbols.filter { it.name == importedMember }
                         if (matches.isNotEmpty()) {
-                            extensionRegistry.getOrPut(type) { mutableListOf() }.addAll(matches)
                             found = true
                         }
                     }

@@ -44,11 +44,8 @@ class Formatter(private val options: FormattingOptions = FormattingOptions()) {
     fun format(source: String, filePath: String): String {
         val lexer = Lexer(source)
         val allTokens = lexer.tokenize(keepTrivia = true)
-        val pureTokens = allTokens.filter { 
-            it !is Token.Whitespace && it !is Token.Comment
-        }
 
-        val parser = Parser(pureTokens, filePath)
+        val parser = Parser(allTokens, filePath)
         val (program, errors) = parser.parseProgram()
 
         if (errors.isNotEmpty()) {
