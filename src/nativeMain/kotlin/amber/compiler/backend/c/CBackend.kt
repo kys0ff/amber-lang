@@ -70,10 +70,15 @@ class CBackend(
         val usedIntrinsicNames = usedSymbols.filter { it.isIntrinsic }.map { it.qualifiedName }.toMutableSet()
         
         // Always include basic runtime helpers
-        usedIntrinsicNames.add("std.runtime.panic")
+        usedIntrinsicNames.add("std.runtime.fatal")
         usedIntrinsicNames.add("std.str.from_num")
-        usedIntrinsicNames.add("std.str.str_concat")
         usedIntrinsicNames.add("std.runtime.to_string")
+        
+        // Include common intrinsics used by operators/expressions
+        usedIntrinsicNames.add("std.str.get")
+        usedIntrinsicNames.add("std.list.get")
+        usedIntrinsicNames.add("std.list.set")
+        usedIntrinsicNames.add("std.list.push")
 
         runtimeEmitter.emitHeaders()
         runtimeEmitter.emitTypedefs()

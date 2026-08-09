@@ -4,15 +4,6 @@ import amber.compiler.lexer.Lexer
 import amber.compiler.lexer.Token
 import amber.util.readFile
 
-/**
- * Generates human-friendly Markdown documentation from Amber source files.
- *
- * The generator performs a single lexical pass over the source, collecting
- * `##`-style doc comments and attaching them to the declaration that follows
- * (functions, intrinsics, structs, enums, and top-level vals/vars). The
- * resulting [DocItem]s are then rendered into a navigable Markdown document
- * with a table of contents, grouped sections, and parameter/return tables.
- */
 class DocGenerator {
 
     data class DocItem(
@@ -384,10 +375,6 @@ class DocGenerator {
         }
         return sb.toString().trim()
     }
-
-    // ---------------------------------------------------------------------
-    // Rendering
-    // ---------------------------------------------------------------------
 
     private fun formatMarkdown(items: List<DocItem>, filePath: String): String {
         val fileName = filePath.substringAfterLast('/').substringAfterLast('\\')
