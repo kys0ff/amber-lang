@@ -1,9 +1,23 @@
-# Runtime and system control module
+/// Runtime and System Control Module
+///
+/// Provides primitives for process termination, system diagnostics, and core type representations.
+/// @module core:runtime
 
-##
-# Terminates the program with the given exit code.
+/// Immediately terminates execution of the process and returns an exit status code to the operating system.
+///
+/// @param code The process exit code (typically `0` for success, non-zero for errors).
+/// @panic Unconditionally halts process execution; control flow does not return to the caller.
 intrinsic func exit(code: num)
 
-##
-# Terminates the program with an error message.
-intrinsic func panic(msg: string)
+/// Prints an unrecoverable error message to standard error and immediately terminates the process with a non-zero status code.
+///
+/// @param msg The diagnostic error message to write before process termination.
+/// @panic Unconditionally halts process execution; control flow does not return to the caller.
+intrinsic func fatal(msg: string)
+
+extend any {
+    /// Formats this value into a human-readable or canonical string representation.
+    ///
+    /// @return The string representation of this value.
+    intrinsic func to_string(): string
+}

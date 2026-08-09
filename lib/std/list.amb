@@ -1,45 +1,223 @@
-# List utilities module
+/// Core List Utilities Module
+///
+/// Provides collection primitives, extension methods, and filtering algorithms for lists.
+/// @module core:list
 
 extend any[] {
-    ##
-    # Returns the num of elements in a list.
+    /// Returns the total number of elements currently stored in the list.
+    ///
+    /// @return The length of the list as a non-negative number.
     intrinsic func len(): num
 
-    ##
-    # Adds an element to the end of a list.
+    /// Appends an element to the end of the list, mutating it in place.
+    ///
+    /// @param value The value to append to the list.
     intrinsic func push(value: any)
 
-    ##
-    # Removes and returns the last element from a list.
+    /// Removes and returns the last element from the list.
+    ///
+    /// @return The removed element.
     intrinsic func pop(): any
 
-    ##
-    # Returns the element at the specified index.
-    # Panics if the index is out of bounds.
+    /// Returns the element at the specified zero-based index.
+    ///
+    /// @param index The zero-based index of the target element.
+    /// @return The element stored at the given index.
+    /// @panic if the index is negative or out of bounds (`index >= len()`).
     intrinsic func get(index: num): any
 
-    ##
-    # Returns the element at the specified index or an error if the index is out of bounds.
+    /// Attempts to retrieve the element at the specified index, returning an error result on failure.
+    ///
+    /// @param index The zero-based index of the target element.
+    /// @return The element at the index, or an error if the index is out of bounds.
     intrinsic func get_or_err(index: num): any!
+
+    /// Overwrites the element at the specified index with a new value.
+    ///
+    /// @param index The zero-based index of the element to modify.
+    /// @param value The new value to set at the specified index.
+    /// @panic if the index is negative or out of bounds (`index >= len()`).
+    intrinsic func set(index: num, value: any)
+
+    /// Returns a new list containing a shallow copy of all elements in this list.
+    ///
+    /// @return A new array instance populated with the current elements.
+    func copy(): any[] {
+        var res: any[] = []
+        for (item in self) {
+            res.push(item)
+        }
+        return res
+    }
+
+    /// Creates a new list containing elements matching the specified target by pointer equality.
+    ///
+    /// @param target The object or primitive reference to compare against.
+    /// @return A new list containing matching elements.
+    func filter_matching(target: any): any[] {
+        var res: any[] = []
+        for (item in self) {
+            if (item == target) {
+                res.push(item)
+            }
+        }
+        return res
+    }
 }
 
-##
-# Returns the num of elements in a list.
+extend num[] {
+    /// Returns a new list containing only elements strictly greater than zero.
+    ///
+    /// @return A new numeric list with positive values.
+    func filter_positive(): num[] {
+        var res: num[] = []
+        for (item in self) {
+            if (item > 0) {
+                res.push(item)
+            }
+        }
+        return res
+    }
+
+    /// Returns a new list containing only non-zero numeric elements.
+    ///
+    /// @return A new numeric list omitting zero values.
+    func filter_non_zero(): num[] {
+        var res: num[] = []
+        for (item in self) {
+            if (item != 0) {
+                res.push(item)
+            }
+        }
+        return res
+    }
+
+    /// Returns a new list containing numbers within the specified closed interval `[min, max]`.
+    ///
+    /// @param min The lower bound (inclusive).
+    /// @param max The upper bound (inclusive).
+    /// @return A new list containing numbers within range.
+    func filter_in_range(min: num, max: num): num[] {
+        var res: num[] = []
+        for (item in self) {
+            if (item >= min) {
+                if (item <= max) {
+                    res.push(item)
+                }
+            }
+        }
+        return res
+    }
+
+    /// Returns a new list sorted in ascending numeric order using bubble sort ($O(n^2)$ time complexity).
+    ///
+    /// @return A newly allocated sorted numeric list.
+    func sort_ascending(): num[] {
+        var res: num[] = []
+        for (item in self) {
+            res.push(item)
+        }
+        val n = res.len()
+        var i = 0
+        while (i < n) {
+            var j = 0
+            while (j < n - i - 1) {
+                if (res[j] > res[j + 1]) {
+                    val temp = res[j]
+                    res[j] = res[j + 1]
+                    res[j + 1] = temp
+                }
+                j = j + 1
+            }
+            i = i + 1
+        }
+        return res
+    }
+
+    /// Returns a new list sorted in descending numeric order using bubble sort ($O(n^2)$ time complexity).
+    ///
+    /// @return A newly allocated sorted numeric list.
+    func sort_descending(): num[] {
+        var res: num[] = []
+        for (item in self) {
+            res.push(item)
+        }
+        val n = res.len()
+        var i = 0
+        while (i < n) {
+            var j = 0
+            while (j < n - i - 1) {
+                if (res[j] < res[j + 1]) {
+                    val temp = res[j]
+                    res[j] = res[j + 1]
+                    res[j + 1] = temp
+                }
+                j = j + 1
+            }
+            i = i + 1
+        }
+        return res
+    }
+}
+
+extend string[] {
+    /// Returns a new list containing only non-empty strings (`len > 0`).
+    ///
+    /// @return A list of strings excluding zero-length entries.
+    func filter_non_empty(): string[] {
+        var res: string[] = []
+        for (item in self) {
+            if (item.len() > 0) {
+                res.push(item)
+            }
+        }
+        return res
+    }
+
+    /// Returns a new list containing strings matching the target sequence.
+    ///
+    /// @param target The exact string sequence to filter by.
+    /// @return A new list containing identical strings.
+    func filter_matching(target: string): string[] {
+        var res: string[] = []
+        for (item in self) {
+            if (item == target) {
+                res.push(item)
+            }
+        }
+        return res
+    }
+}
+
+/// Standalone function: Returns the total number of elements in the given list.
+///
+/// @param l The input list.
+/// @return The length of the list as a number.
 intrinsic func len(l: any[]): num
 
-##
-# Adds an element to the end of a list.
+/// Standalone function: Appends an element to the end of the specified list.
+///
+/// @param l The target list to mutate.
+/// @param value The value to append.
 intrinsic func push(l: any[], value: any)
 
-##
-# Removes and returns the last element from a list.
+/// Standalone function: Removes and returns the last element from the specified list.
+///
+/// @param l The target list to mutate.
+/// @return The removed element.
 intrinsic func pop(l: any[]): any
 
-##
-# Returns the element at the specified index.
-# Panics if the index is out of bounds.
+/// Standalone function: Returns the element at the specified zero-based index.
+///
+/// @param l The list to inspect.
+/// @param index The zero-based index.
+/// @return The element at the given index.
+/// @panic if index is out of bounds.
 intrinsic func get(l: any[], index: num): any
 
-##
-# Returns the element at the specified index or an error if the index is out of bounds.
+/// Standalone function: Retrieves the element at the specified index or returns an error.
+///
+/// @param l The list to inspect.
+/// @param index The zero-based index.
+/// @return The element at the index or an error result.
 intrinsic func get_or_err(l: any[], index: num): any!

@@ -1,54 +1,107 @@
-# Mathematical constants and functions
-##
-# The mathematical constant pi.
+/// Mathematical Constants and Functions Module
+///
+/// Provides mathematical constants, trigonometric functions, rounding operations, and range utility helpers.
+/// @module core:math
+
+/// The mathematical constant $\pi$, representing the ratio of a circle's circumference to its diameter.
 val pi = 3.141592653589793
 
 extend num {
-    ##
-    # Returns the absolute value of a num.
+    /// Returns the absolute (non-negative) magnitude of this number.
+    ///
+    /// @return The absolute value.
     intrinsic func abs(): num
 
-    ##
-    # Returns the square root of a num.
+    /// Computes the principal square root of this number.
+    ///
+    /// @return The square root as a non-negative number.
+    /// @panic If this number is negative.
     intrinsic func sqrt(): num
 
-    ##
-    # Returns the value of a base raised to a power.
+    /// Raises this number to the power of the specified exponent ($self^{exp}$).
+    ///
+    /// @param exp The exponent power.
+    /// @return The result of the exponentiation.
     intrinsic func pow(exp: num): num
 
-    ##
-    # Returns the sine of a num (in radians).
+    /// Computes the sine of an angle given in radians.
+    ///
+    /// @return The sine value in the interval `[-1.0, 1.0]`.
     intrinsic func sin(): num
 
-    ##
-    # Returns the cosine of a num (in radians).
+    /// Computes the cosine of an angle given in radians.
+    ///
+    /// @return The cosine value in the interval `[-1.0, 1.0]`.
     intrinsic func cos(): num
 
-    ##
-    # Returns the largest integer less than or equal to a num.
+    /// Returns the largest integer less than or equal to this number.
+    ///
+    /// @return The floored value.
     intrinsic func floor(): num
 
-    ##
-    # Returns the smallest integer greater than or equal to a num.
+    /// Returns the smallest integer greater than or equal to this number.
+    ///
+    /// @return The ceiling value.
     intrinsic func ceil(): num
 
-    ##
-    # Returns the greater of two nums.
-    intrinsic func max(other: num): num
+    /// Returns the larger value between this number and another.
+    ///
+    /// @param other The number to compare against.
+    /// @return The maximum value.
+    func max(other: num): num {
+        if (self > other) {
+            return self
+        }
+        return other
+    }
 
-    ##
-    # Returns the smaller of two nums.
-    intrinsic func min(other: num): num
+    /// Returns the smaller value between this number and another.
+    ///
+    /// @param other The number to compare against.
+    /// @return The minimum value.
+    func min(other: num): num {
+        if (self < other) {
+            return self
+        }
+        return other
+    }
 
-    ##
-    # Clamps a num between a minimum and maximum value.
-    intrinsic func clamp(min: num, max: num): num
+    /// Restricts this number to a closed interval `[min, max]`.
+    ///
+    /// @param min The lower bound.
+    /// @param max The upper bound.
+    /// @return `min` if `self < min`, `max` if `self > max`, or `self` otherwise.
+    func clamp(min: num, max: num): num {
+        if (self < min) {
+            return min
+        }
+        if (self > max) {
+            return max
+        }
+        return self
+    }
 }
 
-##
-# Returns the greater of two nums.
-intrinsic func max(a: num, b: num): num
+/// Standalone function: Returns the larger of two numbers.
+///
+/// @param a The first number.
+/// @param b The second number.
+/// @return The maximum of `a` and `b`.
+func max(a: num, b: num): num {
+    if (a > b) {
+        return a
+    }
+    return b
+}
 
-##
-# Returns the smaller of two nums.
-intrinsic func min(a: num, b: num): num
+/// Standalone function: Returns the smaller of two numbers.
+///
+/// @param a The first number.
+/// @param b The second number.
+/// @return The minimum of `a` and `b`.
+func min(a: num, b: num): num {
+    if (a < b) {
+        return a
+    }
+    return b
+}

@@ -71,16 +71,16 @@ class FormatterTest {
         // but let's test a simple case.
         assertFormat(
             """
-            # This is a comment
+            // This is a comment
             func main() {
-                # Nested comment
+                // Nested comment
                 val x = 1
             }
             """.trimIndent(),
             """
-            # This is a comment
+            // This is a comment
             func main() {
-                # Nested comment
+                // Nested comment
                 val x = 1
             }
             
@@ -91,7 +91,7 @@ class FormatterTest {
     @Test
     fun testIdempotency() {
         assertIdempotent("func main() {\n    val x = 1 + 2\n}")
-        assertIdempotent("val x = 1\n# comment\nval y = 2")
+        assertIdempotent("val x = 1\n// comment\nval y = 2")
     }
 
     @Test

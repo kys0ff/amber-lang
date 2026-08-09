@@ -1,13 +1,19 @@
-# Standard input/output module
-# Provides functions for interacting with the console and terminal.
-##
-# Prints the given value to the standard output.
+/// Standard Input/Output Module
+///
+/// Provides core primitives for interacting with standard input, standard output, and terminal streams.
+/// @module core:io
+
+/// Prints the string representation of a value to standard output without a trailing newline.
+///
+/// @param value The value to write to standard output.
 intrinsic func print(value: any)
 
-##
-# Prints the given value to the standard output, followed by a newline.
+/// Prints the string representation of a value to standard output, followed by a line break.
+///
+/// @param value The value to write to standard output.
 intrinsic func println(value: any)
 
-##
-# Reads a line of text from the standard input.
+/// Reads a single line of text from standard input up to the next newline sequence.
+///
+/// @return The text read from standard input excluding the trailing newline, or an empty string at EOF.
 intrinsic func readln(): string

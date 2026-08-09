@@ -54,14 +54,6 @@ class Lexer(private val source: String) {
                     state.column = 1
                     return Token.Newline("\n", startLine, startColumn)
                 }
-                '#' -> {
-                    val start = state.position
-                    while (state.position < source.length && source[state.position] != '\n') {
-                        state.position++
-                        state.column++
-                    }
-                    return Token.Comment(source.substring(start, state.position), startLine, startColumn)
-                }
                 '/' -> {
                     if (state.position + 1 < source.length && source[state.position + 1] == '/') {
                         val start = state.position
@@ -127,12 +119,6 @@ class Lexer(private val source: String) {
                 ' ', '\t', '\r' -> {
                     state.position++
                     state.column++
-                }
-                '#' -> {
-                    while (state.position < source.length && source[state.position] != '\n') {
-                        state.position++
-                        state.column++
-                    }
                 }
                 '/' -> {
                     if (state.position + 1 < source.length && source[state.position + 1] == '/') {

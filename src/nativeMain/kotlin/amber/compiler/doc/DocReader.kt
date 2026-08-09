@@ -204,11 +204,13 @@ class DocReader(
             "Struct" -> style(Ansi::cyan, "struct")
             "Enum" -> style(Ansi::cyan, "enum")
             "Variable" -> style(Ansi::cyan, "var")
+            "Module" -> style(Ansi::cyan, "module")
             else -> style(Ansi::dim, item.type.lowercase())
         }
 
         val displayName = if (item.receiver != null) "${item.receiver}.${item.name}" else item.name
-        println("${style(Ansi::dim, module)} $typeLabel ${boldYellow(displayName)}")
+        val moduleLabel = if (item.module != null) "(${item.module}) " else ""
+        println("${style(Ansi::dim, module)} $typeLabel $moduleLabel${boldYellow(displayName)}")
         printSignature(item.signature)
         println()
 
@@ -231,7 +233,15 @@ class DocReader(
             println()
         }
 
-        if (item.description == null && item.params.isEmpty() && item.returns == null) {
+        if (item.panics.isNotEmpty()) {
+            println(style(Ansi::bold, "Panics:"))
+            item.panics.forEach { panic ->
+                println("  $panic")
+            }
+            println()
+        }
+
+        if (item.description == null && item.params.isEmpty() && item.returns == null && item.panics.isEmpty()) {
             println(style(Ansi::dim, "  No documentation provided."))
             println()
         }

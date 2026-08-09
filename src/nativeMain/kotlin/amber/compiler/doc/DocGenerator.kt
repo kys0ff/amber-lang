@@ -25,6 +25,7 @@ class DocGenerator {
         val params: List<Pair<String, String>> = emptyList(),
         val returns: String? = null,
         val receiver: String? = null,
+        val panics: List<String> = emptyList(),
     )
 
     /** Order in which item categories are rendered, and the emoji used as a section marker. */
@@ -59,18 +60,31 @@ class DocGenerator {
             when (val token = tokens[i]) {
                 is Token.Comment -> {
                     val value = token.value.trim()
-                    if (value.startsWith("##")) {
+                    if (value.startsWith("///")) {
                         if (currentDoc == null) currentDoc = StringBuilder()
-                        val content = value.removePrefix("##").trim()
-                        if (content.isNotEmpty()) currentDoc.append(content).append("\n")
-                    } else if (value.startsWith("#") && (currentDoc != null)) {
-                        val content = value.removePrefix("#").trim()
-                        currentDoc.append(content).append("\n")
-                    } else {
+                        val content = value.removePrefix("///").trim()
+                        if (content.isNotEmpty() || currentDoc.isNotEmpty()) {
+                            currentDoc.append(content).append("\n")
+                        }
+                    } else if (value.startsWith("//") && (currentDoc != null)) {
                         currentDoc = null
                     }
                 }
                 is Token.Keyword -> {
+                    // Check for module header before processing keywords
+                    val doc = currentDoc?.toString()?.trim()
+                    if (doc != null && doc.contains("@module") && (braceDepth == 0)) {
+                        val parsed = parseDocstring(doc)
+                        items.add(
+                            DocItem(
+                                "Module", parsed.module ?: "Unknown", "", doc,
+                                module = parsed.module,
+                                description = parsed.description
+                            )
+                        )
+                        currentDoc = null
+                    }
+
                     if (braceDepth == 0 || isInsideExtend(tokens, i)) {
                         when (token.value) {
                             "intrinsic" -> {
@@ -90,8 +104,9 @@ class DocGenerator {
                                     items.add(
                                         DocItem(
                                             type, nameToken.value, signature, doc,
+                                            module = parsed.module,
                                             description = parsed.description, params = parsed.params, returns = parsed.returns,
-                                            receiver = currentReceiver
+                                            receiver = currentReceiver, panics = parsed.panics
                                         )
                                     )
                                 }
@@ -114,8 +129,9 @@ class DocGenerator {
                                         items.add(
                                             DocItem(
                                                 type, nameToken.value, signature, doc,
+                                                module = parsed.module,
                                                 description = parsed.description, params = parsed.params, returns = parsed.returns,
-                                                receiver = currentReceiver
+                                                receiver = currentReceiver, panics = parsed.panics
                                             )
                                         )
                                     }
@@ -131,7 +147,9 @@ class DocGenerator {
                                     items.add(
                                         DocItem(
                                             "Struct", nameToken.value, "struct ${nameToken.value}", doc,
-                                            description = parsed.description
+                                            module = parsed.module,
+                                            description = parsed.description,
+                                            panics = parsed.panics
                                         )
                                     )
                                 }
@@ -146,7 +164,9 @@ class DocGenerator {
                                     items.add(
                                         DocItem(
                                             "Enum", nameToken.value, "enum ${nameToken.value}", doc,
-                                            description = parsed.description
+                                            module = parsed.module,
+                                            description = parsed.description,
+                                            panics = parsed.panics
                                         )
                                     )
                                 }
@@ -162,7 +182,9 @@ class DocGenerator {
                                         items.add(
                                             DocItem(
                                                 "Variable", nameToken.value, "${token.value} ${nameToken.value}", doc,
-                                                description = parsed.description
+                                                module = parsed.module,
+                                                description = parsed.description,
+                                                panics = parsed.panics
                                             )
                                         )
                                     }
@@ -185,6 +207,20 @@ class DocGenerator {
                     }
                 }
                 is Token.Separator -> {
+                    // Check for module header
+                    val doc = currentDoc?.toString()?.trim()
+                    if (doc != null && doc.contains("@module") && (braceDepth == 0)) {
+                        val parsed = parseDocstring(doc)
+                        items.add(
+                            DocItem(
+                                "Module", parsed.module ?: "Unknown", "", doc,
+                                module = parsed.module,
+                                description = parsed.description
+                            )
+                        )
+                        currentDoc = null
+                    }
+
                     if (token.value == "{") braceDepth++
                     if (token.value == "}") {
                         braceDepth--
@@ -211,7 +247,9 @@ class DocGenerator {
     private data class ParsedDoc(
         val description: String?,
         val params: List<Pair<String, String>>,
-        val returns: String?
+        val returns: String?,
+        val module: String? = null,
+        val panics: List<String> = emptyList()
     )
 
     private fun parseDocstring(doc: String?): ParsedDoc {
@@ -221,6 +259,8 @@ class DocGenerator {
         val description = mutableListOf<String>()
         val params = mutableListOf<Pair<String, String>>()
         var returns: String? = null
+        var module: String? = null
+        val panics = mutableListOf<String>()
 
         lines.forEach { line ->
             val trimmed = line.trim()
@@ -237,8 +277,14 @@ class DocGenerator {
                 trimmed.startsWith("@return") -> {
                     returns = trimmed.removePrefix("@return").trim()
                 }
+                trimmed.startsWith("@module") -> {
+                    module = trimmed.removePrefix("@module").trim()
+                }
+                trimmed.startsWith("@panic") -> {
+                    panics.add(trimmed.removePrefix("@panic").trim())
+                }
                 else -> {
-                    if (params.isEmpty() && returns == null) {
+                    if (params.isEmpty() && returns == null && module == null && panics.isEmpty()) {
                         description.add(line)
                     }
                 }
@@ -248,7 +294,9 @@ class DocGenerator {
         return ParsedDoc(
             description = description.joinToString("\n").trim().ifEmpty { null },
             params = params,
-            returns = returns
+            returns = returns,
+            module = module,
+            panics = panics
         )
     }
 
@@ -345,31 +393,43 @@ class DocGenerator {
         val fileName = filePath.substringAfterLast('/').substringAfterLast('\\')
         val sb = StringBuilder()
 
-        sb.append("# 📘 $fileName\n\n")
+        val moduleItem = items.find { it.type == "Module" }
+        if (moduleItem != null) {
+            sb.append("# 📘 ${moduleItem.module ?: moduleItem.name}\n\n")
+            if (moduleItem.description != null) {
+                sb.append(moduleItem.description).append("\n\n")
+            }
+        } else {
+            sb.append("# 📘 $fileName\n\n")
+        }
 
-        if (items.isEmpty()) {
-            sb.append("_No documented items found in this file._\n\n")
-            sb.append("> Add a `##` doc comment above a `func`, `intrinsic`, `struct`, `enum`, or top-level `val`/`var` to document it.\n")
+        if (items.isEmpty() || (items.size == 1 && moduleItem != null)) {
+            if (items.isEmpty()) {
+                sb.append("_No documented items found in this file._\n\n")
+                sb.append("> Add a `///` doc comment above a `func`, `intrinsic`, `struct`, `enum`, or top-level `val`/`var` to document it.\n")
+            }
             return sb.toString()
         }
 
-        val documented = items.count { it.description != null || it.docstring != null }
-        sb.append("**${items.size}** declaration${if (items.size == 1) "" else "s"} found · ")
+        val documented = items.count { (it.description != null || it.docstring != null) && it.type != "Module" }
+        val declarationCount = items.count { it.type != "Module" }
+        sb.append("**$declarationCount** declaration${if (declarationCount == 1) "" else "s"} found · ")
             .append("**$documented** documented\n\n")
 
         val grouped = items.groupBy { it.type }
 
         // ---- Table of contents -------------------------------------------------
+        sb.append("<a name=\"contents\"></a>\n")
         sb.append("## Contents\n\n")
         typeOrder.forEach { (type, emoji) ->
             val group = grouped[type] ?: return@forEach
-            sb.append("- $emoji **$type** (${group.size})\n")
+            sb.append("- $emoji [**$type**](#${sectionAnchor(type)}) (${group.size})\n")
 
             if (type.contains("Extension")) {
                 val byReceiver = group.groupBy { it.receiver }
                 byReceiver.keys.filterNotNull().sortedBy { it.lowercase() }.forEach { receiver ->
                     val receiverItems = byReceiver[receiver] ?: return@forEach
-                    sb.append("  - **$receiver**\n")
+                    sb.append("  - [**$receiver**](#${receiverAnchor(receiver)})\n")
                     receiverItems.sortedBy { it.name.lowercase() }.forEach { item ->
                         sb.append("    - [`${item.name}`](#${anchor(item)})\n")
                     }
@@ -386,11 +446,13 @@ class DocGenerator {
         typeOrder.forEach { (type, emoji) ->
             val group = grouped[type]?.sortedBy { it.name.lowercase() } ?: return@forEach
 
+            sb.append("<a name=\"${sectionAnchor(type)}\"></a>\n")
             sb.append("## $emoji $type${if (group.size > 1) "s" else ""}\n\n")
 
             if (type.contains("Extension")) {
                 val byReceiver = group.groupBy { it.receiver }
                 byReceiver.keys.filterNotNull().sortedBy { it.lowercase() }.forEach { receiver ->
+                    sb.append("<a name=\"${receiverAnchor(receiver)}\"></a>\n")
                     sb.append("### Extensions for `$receiver`\n\n")
                     val receiverItems = byReceiver[receiver] ?: return@forEach
                     receiverItems.sortedBy { it.name.lowercase() }.forEach { item ->
@@ -408,7 +470,13 @@ class DocGenerator {
     private fun renderItem(sb: StringBuilder, item: DocItem, headerLevel: Int = 3) {
         val displayName = if (item.receiver != null) "${item.receiver}.${item.name}" else item.name
         val prefix = "#".repeat(headerLevel)
+        sb.append("<a name=\"${anchor(item)}\"></a>\n")
         sb.append("$prefix $displayName\n\n")
+        
+        if (item.module != null) {
+            sb.append("**Module:** `${item.module}`\n\n")
+        }
+
         sb.append("```amber\n${item.signature}\n```\n\n")
 
         val description = item.description ?: item.docstring
@@ -432,6 +500,14 @@ class DocGenerator {
             sb.append("**Returns:** $returns\n\n")
         }
 
+        if (item.panics.isNotEmpty()) {
+            sb.append("**Panics**\n\n")
+            item.panics.forEach { panic ->
+                sb.append("- $panic\n")
+            }
+            sb.append("\n")
+        }
+
         sb.append("[↑ back to top](#contents)\n\n")
         sb.append("---\n\n")
     }
@@ -439,6 +515,14 @@ class DocGenerator {
     /** Builds a GitHub-flavored Markdown anchor id for a doc item's heading. */
     private fun anchor(item: DocItem): String {
         val base = if (item.receiver != null) "${item.receiver}-${item.name}" else item.name
-        return base.lowercase().replace(Regex("[^a-z0-9-]+"), "-").trim('-')
+        return base.lowercase().replace("_", "-").replace(Regex("[^a-z0-9-]+"), "-").trim('-')
+    }
+
+    private fun sectionAnchor(type: String): String {
+        return type.lowercase().replace(" ", "-").replace(Regex("[^a-z0-9-]+"), "-")
+    }
+
+    private fun receiverAnchor(receiver: String): String {
+        return "extensions-for-${receiver.lowercase().replace(Regex("[^a-z0-9-]+"), "-")}"
     }
 }

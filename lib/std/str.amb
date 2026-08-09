@@ -1,61 +1,96 @@
-# String utilities module
+/// String Utilities Module
+///
+/// Provides string inspection, sub-string matching, character retrieval, and type coercion functions.
+/// @module core:str
 
 extend string {
-    ##
-    # Returns the length of a string.
+    /// Returns the total number of characters in the string.
+    ///
+    /// @return The length of the string as a non-negative number.
     intrinsic func len(): num
 
-    ##
-    # Returns the character at the specified index.
-    # Panics if the index is out of bounds.
+    /// Returns the character at the specified zero-based index.
+    ///
+    /// @param index The zero-based position of the target character.
+    /// @return The character at the given index.
+    /// @panic If `index` is negative or out of bounds (`index >= len()`).
     intrinsic func get(index: num): char
 
-    ##
-    # Returns the character at the specified index or an error if the index is out of bounds.
+    /// Attempts to retrieve the character at the specified index, returning an error result on failure.
+    ///
+    /// @param index The zero-based position of the target character.
+    /// @return The character at the index, or an error if out of bounds.
     intrinsic func get_or_err(index: num): char!
 
-    ##
-    # Returns true if the string contains the specified substring.
+    /// Checks whether the string contains the specified substring.
+    ///
+    /// @param sub The target sequence to search for.
+    /// @return `true` if `sub` is present anywhere in the string, `false` otherwise.
     intrinsic func contains(sub: string): bool
 
-    ##
-    # Returns true if the string starts with the specified substring.
+    /// Checks whether the string begins with the specified substring prefix.
+    ///
+    /// @param sub The prefix sequence to test.
+    /// @return `true` if the string starts with `sub`, `false` otherwise.
     intrinsic func starts_with(sub: string): bool
 
-    ##
-    # Returns true if the string ends with the specified substring.
+    /// Checks whether the string ends with the specified substring suffix.
+    ///
+    /// @param sub The suffix sequence to test.
+    /// @return `true` if the string ends with `sub`, `false` otherwise.
     intrinsic func ends_with(sub: string): bool
 }
 
-##
-# Returns the length of a string.
+/// Standalone function: Returns the total number of characters in a string.
+///
+/// @param s The string to measure.
+/// @return The length of `s`.
 intrinsic func len(s: string): num
 
-##
-# Returns the character at the specified index.
-# Panics if the index is out of bounds.
+/// Standalone function: Returns the character at the specified zero-based index.
+///
+/// @param s The string to inspect.
+/// @param index The zero-based index.
+/// @return The character at the specified position.
+/// @panic If `index` is negative or out of bounds.
 intrinsic func get(s: string, index: num): char
 
-##
-# Returns the character at the specified index or an error if the index is out of bounds.
+/// Standalone function: Retrieves the character at the specified index or returns an error.
+///
+/// @param s The string to inspect.
+/// @param index The zero-based index.
+/// @return The character at the index or an error result.
 intrinsic func get_or_err(s: string, index: num): char!
 
-##
-# Returns true if the string contains the specified substring.
+/// Standalone function: Checks whether a string contains a target substring.
+///
+/// @param s The string to search within.
+/// @param sub The substring sequence to find.
+/// @return `true` if `sub` is found within `s`, `false` otherwise.
 intrinsic func contains(s: string, sub: string): bool
 
-##
-# Returns true if the string starts with the specified substring.
+/// Standalone function: Checks whether a string starts with a given prefix.
+///
+/// @param s The string to inspect.
+/// @param sub The target prefix.
+/// @return `true` if `s` begins with `sub`, `false` otherwise.
 intrinsic func starts_with(s: string, sub: string): bool
 
-##
-# Returns true if the string ends with the specified substring.
+/// Standalone function: Checks whether a string ends with a given suffix.
+///
+/// @param s The string to inspect.
+/// @param sub The target suffix.
+/// @return `true` if `s` ends with `sub`, `false` otherwise.
 intrinsic func ends_with(s: string, sub: string): bool
 
-##
-# Converts any value to its string representation.
+/// Converts any value into its string representation.
+///
+/// @param value The value to convert.
+/// @return The formatted string representation.
 intrinsic func to_string(value: any): string
 
-##
-# Converts a num to its string representation.
+/// Converts a numeric value into its literal string representation.
+///
+/// @param n The number to convert.
+/// @return The converted numeric string.
 intrinsic func from_num(n: num): string

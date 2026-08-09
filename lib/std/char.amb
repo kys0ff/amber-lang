@@ -1,11 +1,16 @@
-# Character utilities module
+/// Character Utilities Module
+///
+/// Provides classification predicates and character-level inspection methods.
+/// @module core:char
 
 extend char {
-    ##
-    # Returns true if the character is a digit.
+    /// Checks whether the character is a numerical digit (`'0'` through `'9'`).
+    ///
+    /// @return `true` if the character represents a digit, `false` otherwise.
     intrinsic func is_digit(): bool
 
-    ##
-    # Returns true if the character is a letter.
+    /// Checks whether the character is an alphabetic letter (`'a'`–`'z'`, `'A'`–`'Z'`).
+    ///
+    /// @return `true` if the character represents an alphabetic letter, `false` otherwise.
     intrinsic func is_letter(): bool
 }
